@@ -1,5 +1,8 @@
 import { createClient } from "@/utils/supabase/client";
-import type { SessionScore } from "@/lib/types/session-score";
+import type {
+  SessionScore,
+  SessionScoreUpdate,
+} from "@/lib/types/session-score";
 
 export async function listSessionScores(): Promise<SessionScore[]> {
   const supabase = createClient();
@@ -25,6 +28,18 @@ export async function getLatestSessionScore(): Promise<SessionScore | null> {
   return (data as SessionScore | null) ?? null;
 }
 
+export async function getSessionScore(id: string): Promise<SessionScore | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("session_scores")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as SessionScore | null) ?? null;
+}
+
 export async function getSessionScoreByYqId(
   yqSessionId: string,
 ): Promise<SessionScore | null> {
@@ -37,4 +52,41 @@ export async function getSessionScoreByYqId(
 
   if (error) throw error;
   return (data as SessionScore | null) ?? null;
+}
+
+export async function updateSessionScore(
+  id: string,
+  payload: SessionScoreUpdate,
+): Promise<SessionScore> {
+  const res = await fetch(`/api/admin/session-scores/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await res.json()) as {
+    ok?: boolean;
+    session_score?: SessionScore;
+    error?: string;
+  };
+
+  if (!res.ok || !data.session_score) {
+    throw new Error(data.error ?? "Failed to update session score");
+  }
+
+  return data.session_score;
+}
+
+export async function deleteSessionScore(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/session-scores/${id}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+
+  const data = (await res.json()) as { ok?: boolean; error?: string };
+
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error ?? "Failed to delete session score");
+  }
 }
