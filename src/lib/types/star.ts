@@ -34,7 +34,7 @@ export type StarControl = {
 /** Participant-facing sliders — `size` is stored but not exposed here. */
 export const STAR_CONTROLS: readonly StarControl[] = [
   { key: "core", label: "Core", termLabel: "core_size", min: 0, max: 100, step: 1 },
-  { key: "freq", label: "Frequency", termLabel: "frequency", min: 1, max: 12, step: 0.1 },
+  { key: "freq", label: "Frequency", termLabel: "frequency", min: 1, max: 6, step: 0.1 },
   { key: "noise", label: "Noise", termLabel: "scatter", min: 1, max: 100, step: 1 },
   {
     key: "hue",

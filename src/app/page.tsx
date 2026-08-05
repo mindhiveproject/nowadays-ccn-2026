@@ -35,7 +35,7 @@ import { DEFAULT_STAR_PARAMS, hueToCss, starInkColor } from "@/lib/types/star";
 const IDENTITY_INK = starInkColor(DEFAULT_STAR_PARAMS.hue);
 
 /** TODO: the lab's page. Kept inert until there's somewhere to point it. */
-const LAB_URL = "https://docs.google.com/presentation/d/1qN0DVo8qp8470tybFpexpE6f0giwSPi4s3w4CrMs618/edit?slide=id.g39a90239b05_0_283#slide=id.g39a90239b05_0_283";
+const LAB_URL = "https://docs.google.com/presentation/d/1qN0DVo8qp8470tybFpexpE6f0giwSPi4s3w4CrMs618";
 
 /** Name and email, asked once and then fixed — every star row carries them. */
 function IdentityStep({
