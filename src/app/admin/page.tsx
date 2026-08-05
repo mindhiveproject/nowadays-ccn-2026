@@ -8,20 +8,18 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import PlanetCanvasClient from "@/components/PlanetCanvasClient";
-import { ADMIN_SESSION_KEY, MAX_STAGED, PARAM_LABELS } from "@/lib/constants";
+import StarSliders from "@/components/StarSliders";
+import StarSwatch from "@/components/StarSwatch";
+import { ADMIN_SESSION_KEY, MAX_STAGED } from "@/lib/constants";
 import { createClient } from "@/utils/supabase/client";
 import {
   listPlanets,
+  normalizePlanet,
   setPlanetStaged,
   updatePlanet,
 } from "@/lib/planets";
-import {
-  PARAM_KEYS,
-  type ParamKey,
-  type Planet,
-  type PlanetUpdate,
-} from "@/lib/types/planet";
+import type { Planet, PlanetUpdate } from "@/lib/types/planet";
+import { clampStar, type StarKey } from "@/lib/types/star";
 
 function formatDate(value: string) {
   try {
@@ -81,13 +79,13 @@ export default function AdminPage() {
           { event: "*", schema: "public", table: "planets" },
           (payload) => {
             if (payload.eventType === "INSERT") {
-              const row = payload.new as Planet;
+              const row = normalizePlanet(payload.new);
               setPlanets((prev) => {
                 if (prev.some((p) => p.id === row.id)) return prev;
                 return [row, ...prev];
               });
             } else if (payload.eventType === "UPDATE") {
-              const row = payload.new as Planet;
+              const row = normalizePlanet(payload.new);
               setPlanets((prev) =>
                 prev.map((p) => (p.id === row.id ? row : p)),
               );
@@ -168,10 +166,7 @@ export default function AdminPage() {
         answer1: editing.answer1,
         answer2: editing.answer2,
         answer3: editing.answer3,
-        params1: editing.params1,
-        params2: editing.params2,
-        params3: editing.params3,
-        params4: editing.params4,
+        star_params: editing.star_params,
         is_staged: editing.is_staged,
       };
 
@@ -298,12 +293,7 @@ export default function AdminPage() {
                 {planets.map((planet) => (
                   <tr key={planet.id} className="hover">
                     <td>
-                      <PlanetCanvasClient
-                        params={planet}
-                        size={72}
-                        fill={false}
-                        className="rounded"
-                      />
+                      <StarSwatch params={planet.star_params} size={72} />
                     </td>
                     <td>
                       <div className="font-medium">{planet.name}</div>
@@ -424,31 +414,25 @@ export default function AdminPage() {
                 />
               </label>
 
-              <div className="grid gap-2">
-                {PARAM_KEYS.map((key: ParamKey) => (
-                  <label key={key} className="form-control">
-                    <div className="flex justify-between text-sm">
-                      <span>{PARAM_LABELS[key]}</span>
-                      <span className="opacity-50">
-                        {editing[key].toFixed(2)}
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      className="range range-sm"
-                      value={editing[key]}
-                      onChange={(e) =>
-                        setEditing({
-                          ...editing,
-                          [key]: Number(e.target.value),
-                        })
-                      }
-                    />
-                  </label>
-                ))}
+              <div className="flex items-start gap-4">
+                <StarSwatch
+                  params={editing.star_params}
+                  size={96}
+                  className="shrink-0"
+                />
+                <StarSliders
+                  className="min-w-0 flex-1"
+                  params={editing.star_params}
+                  onChange={(key: StarKey, value) =>
+                    setEditing({
+                      ...editing,
+                      star_params: {
+                        ...editing.star_params,
+                        [key]: clampStar(key, value),
+                      },
+                    })
+                  }
+                />
               </div>
 
               <label className="label cursor-pointer justify-start gap-3">
