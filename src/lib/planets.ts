@@ -4,6 +4,16 @@ import type {
   PlanetInsert,
   PlanetUpdate,
 } from "@/lib/types/planet";
+import { toStarParams } from "@/lib/types/star";
+
+/**
+ * `star_params` is jsonb, so anything could come back — including rows written
+ * before a control existed. Coerce every read through the star schema.
+ */
+export function normalizePlanet(row: unknown): Planet {
+  const planet = row as Planet;
+  return { ...planet, star_params: toStarParams(planet.star_params) };
+}
 
 export async function listPlanets(): Promise<Planet[]> {
   const supabase = createClient();
@@ -13,7 +23,7 @@ export async function listPlanets(): Promise<Planet[]> {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as Planet[];
+  return (data ?? []).map(normalizePlanet);
 }
 
 export async function getPlanet(id: string): Promise<Planet | null> {
@@ -25,7 +35,7 @@ export async function getPlanet(id: string): Promise<Planet | null> {
     .maybeSingle();
 
   if (error) throw error;
-  return data as Planet | null;
+  return data ? normalizePlanet(data) : null;
 }
 
 export async function createPlanet(payload: PlanetInsert): Promise<Planet> {
@@ -37,7 +47,7 @@ export async function createPlanet(payload: PlanetInsert): Promise<Planet> {
     .single();
 
   if (error) throw error;
-  return data as Planet;
+  return normalizePlanet(data);
 }
 
 export async function updatePlanet(
@@ -53,7 +63,7 @@ export async function updatePlanet(
     .single();
 
   if (error) throw error;
-  return data as Planet;
+  return normalizePlanet(data);
 }
 
 export async function upsertPlanetById(
