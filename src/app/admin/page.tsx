@@ -43,6 +43,12 @@ type SessionScoreDraft = {
   recorded_at: string;
 };
 
+type PlanetStageFilter = "all" | "live" | "pending" | "unstaged";
+type PlanetSort = "newest" | "oldest" | "name";
+type ScoreSort = "recent" | "oldest" | "high" | "low";
+
+const NO_STRATEGY = "__none__";
+
 function newSessionScoreDraft(planets: Planet[]): SessionScoreDraft {
   const a = planets[0]?.id ?? "";
   const b = planets.find((p) => p.id !== a)?.id ?? "";
@@ -357,6 +363,12 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [scoreSaving, setScoreSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"planets" | "scores">("planets");
+  const [query, setQuery] = useState("");
+  const [planetStageFilter, setPlanetStageFilter] =
+    useState<PlanetStageFilter>("all");
+  const [planetSort, setPlanetSort] = useState<PlanetSort>("newest");
+  const [scoreStrategyFilter, setScoreStrategyFilter] = useState("all");
+  const [scoreSort, setScoreSort] = useState<ScoreSort>("recent");
 
   useEffect(() => {
     if (sessionStorage.getItem(ADMIN_SESSION_KEY) !== "1") return;
@@ -538,6 +550,115 @@ export default function AdminPage() {
 
   function planetLabel(id: string) {
     return planetById.get(id)?.name ?? id.slice(0, 8);
+  }
+
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredPlanets = useMemo(() => {
+    const pending = new Set(pendingStageIds);
+    const matched = planets.filter((planet) => {
+      if (planetStageFilter === "live" && !planet.is_staged) return false;
+      if (planetStageFilter === "pending" && !pending.has(planet.id)) {
+        return false;
+      }
+      if (
+        planetStageFilter === "unstaged" &&
+        (planet.is_staged || pending.has(planet.id))
+      ) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      return [
+        planet.name,
+        planet.creator_name,
+        planet.creator_email,
+        planet.id,
+        formatJsonValue(planet.answers.answer1),
+      ].some((field) => field.toLowerCase().includes(normalizedQuery));
+    });
+
+    return matched.sort((a, b) => {
+      if (planetSort === "name") return a.name.localeCompare(b.name);
+      const delta =
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      return planetSort === "oldest" ? delta : -delta;
+    });
+  }, [
+    planets,
+    pendingStageIds,
+    planetStageFilter,
+    planetSort,
+    normalizedQuery,
+  ]);
+
+  const strategyOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const score of sessionScores) {
+      if (score.strategy) values.add(score.strategy);
+    }
+    // Keep a selected strategy listed even if its last score just disappeared.
+    if (scoreStrategyFilter !== "all" && scoreStrategyFilter !== NO_STRATEGY) {
+      values.add(scoreStrategyFilter);
+    }
+    return [...values].sort((a, b) => a.localeCompare(b));
+  }, [sessionScores, scoreStrategyFilter]);
+
+  const filteredScores = useMemo(() => {
+    const matched = sessionScores.filter((score) => {
+      if (scoreStrategyFilter === NO_STRATEGY && score.strategy) return false;
+      if (
+        scoreStrategyFilter !== "all" &&
+        scoreStrategyFilter !== NO_STRATEGY &&
+        score.strategy !== scoreStrategyFilter
+      ) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      const a = planetById.get(score.planet_a_id);
+      const b = planetById.get(score.planet_b_id);
+      return [
+        score.yq_session_id,
+        score.strategy ?? "",
+        String(score.score),
+        score.planet_a_id,
+        score.planet_b_id,
+        a?.name ?? "",
+        a?.creator_name ?? "",
+        b?.name ?? "",
+        b?.creator_name ?? "",
+      ].some((field) => field.toLowerCase().includes(normalizedQuery));
+    });
+
+    return matched.sort((a, b) => {
+      if (scoreSort === "high") return b.score - a.score;
+      if (scoreSort === "low") return a.score - b.score;
+      const delta =
+        new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime();
+      return scoreSort === "oldest" ? delta : -delta;
+    });
+  }, [
+    sessionScores,
+    planetById,
+    scoreStrategyFilter,
+    scoreSort,
+    normalizedQuery,
+  ]);
+
+  const filtersActive =
+    normalizedQuery.length > 0 ||
+    (activeTab === "planets"
+      ? planetStageFilter !== "all" || planetSort !== "newest"
+      : scoreStrategyFilter !== "all" || scoreSort !== "recent");
+
+  function clearFilters() {
+    setQuery("");
+    if (activeTab === "planets") {
+      setPlanetStageFilter("all");
+      setPlanetSort("newest");
+    } else {
+      setScoreStrategyFilter("all");
+      setScoreSort("recent");
+    }
   }
 
   function openScoreEdit(score: SessionScore) {
@@ -944,6 +1065,103 @@ export default function AdminPage() {
           </button>
         </div>
 
+        <div className="rounded-box border border-base-300 bg-base-100 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="input input-bordered input-sm flex flex-1 items-center gap-2">
+              <span aria-hidden className="opacity-50">
+                ⌕
+              </span>
+              <input
+                type="search"
+                className="grow"
+                value={query}
+                placeholder={
+                  activeTab === "planets"
+                    ? "Search planets by name, creator, email, answer, or id…"
+                    : "Search scores by session id, strategy, score, or planet…"
+                }
+                aria-label={
+                  activeTab === "planets"
+                    ? "Search planets"
+                    : "Search session scores"
+                }
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+
+            {activeTab === "planets" ? (
+              <>
+                <select
+                  className="select select-bordered select-sm"
+                  aria-label="Filter by staging"
+                  value={planetStageFilter}
+                  onChange={(e) =>
+                    setPlanetStageFilter(e.target.value as PlanetStageFilter)
+                  }
+                >
+                  <option value="all">All staging</option>
+                  <option value="live">Live</option>
+                  <option value="pending">Pre-staged</option>
+                  <option value="unstaged">Unstaged</option>
+                </select>
+                <select
+                  className="select select-bordered select-sm"
+                  aria-label="Sort planets"
+                  value={planetSort}
+                  onChange={(e) => setPlanetSort(e.target.value as PlanetSort)}
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="name">Name A–Z</option>
+                </select>
+              </>
+            ) : (
+              <>
+                <select
+                  className="select select-bordered select-sm"
+                  aria-label="Filter by strategy"
+                  value={scoreStrategyFilter}
+                  onChange={(e) => setScoreStrategyFilter(e.target.value)}
+                >
+                  <option value="all">All strategies</option>
+                  <option value={NO_STRATEGY}>No strategy</option>
+                  {strategyOptions.map((strategy) => (
+                    <option key={strategy} value={strategy}>
+                      {strategy}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="select select-bordered select-sm"
+                  aria-label="Sort session scores"
+                  value={scoreSort}
+                  onChange={(e) => setScoreSort(e.target.value as ScoreSort)}
+                >
+                  <option value="recent">Most recent</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="high">Highest score</option>
+                  <option value="low">Lowest score</option>
+                </select>
+              </>
+            )}
+
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={!filtersActive}
+              onClick={clearFilters}
+            >
+              Clear
+            </button>
+          </div>
+
+          <p className="mt-2 text-xs opacity-60">
+            {activeTab === "planets"
+              ? `Showing ${filteredPlanets.length} of ${planets.length} planets`
+              : `Showing ${filteredScores.length} of ${sessionScores.length} session scores`}
+          </p>
+        </div>
+
         {loading && planets.length === 0 && sessionScores.length === 0 ? (
           <div className="flex justify-center py-20">
             <span className="loading loading-spinner loading-lg" />
@@ -953,6 +1171,19 @@ export default function AdminPage() {
             {planets.length === 0 ? (
               <div className="rounded-box border border-dashed border-base-300 p-12 text-center opacity-60">
                 No planets yet. Waiting for mobile submissions…
+              </div>
+            ) : filteredPlanets.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-box border border-dashed border-base-300 p-12 text-center">
+                <span className="text-sm opacity-60">
+                  No planets match the current search or filters.
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={clearFilters}
+                >
+                  Clear filters
+                </button>
               </div>
             ) : (
               <div className="overflow-x-auto rounded-box border border-base-300 bg-base-100">
@@ -968,7 +1199,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {planets.map((planet) => (
+                    {filteredPlanets.map((planet) => (
                       <tr key={planet.id} className="hover">
                         <td>
                           <StarSwatch params={planet.params} size={72} />
@@ -1051,6 +1282,19 @@ export default function AdminPage() {
               <div className="rounded-box border border-dashed border-base-300 p-8 text-center text-sm opacity-60">
                 No session scores yet.
               </div>
+            ) : filteredScores.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 rounded-box border border-dashed border-base-300 p-8 text-center">
+                <span className="text-sm opacity-60">
+                  No session scores match the current search or filters.
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={clearFilters}
+                >
+                  Clear filters
+                </button>
+              </div>
             ) : (
               <div className="overflow-x-auto rounded-box border border-base-300 bg-base-100">
                 <table className="table">
@@ -1067,21 +1311,21 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sessionScores.map((score, index) => (
+                    {filteredScores.map((score) => (
                       <tr
                         key={score.id}
                         className={`hover ${
-                          index === 0 ? "bg-primary/5" : ""
+                          score.id === latestScore?.id ? "bg-primary/5" : ""
                         }`}
                       >
                         <td className="font-medium">
                           <div className="flex items-center gap-2">
                             <span>{score.score}</span>
-                            {index === 0 ? (
+                            {score.id === latestScore?.id ? (
                               <span className="badge badge-primary badge-sm">
                                 Latest
                               </span>
-                            ) : index === 1 ? (
+                            ) : score.id === previousScore?.id ? (
                               <span className="badge badge-ghost badge-sm">
                                 Previous
                               </span>
