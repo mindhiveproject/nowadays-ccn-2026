@@ -6,7 +6,7 @@ import StarCanvasClient from "@/components/StarCanvasClient";
 import { getPlanet } from "@/lib/planets";
 import { VOID_COLOR } from "@/lib/theme";
 import type { Planet } from "@/lib/types/planet";
-import { STAR_CONTROLS } from "@/lib/types/star";
+import { STAR_KEYS } from "@/lib/types/star";
 
 export default function StarDetailPage({
   params,
@@ -69,7 +69,7 @@ export default function StarDetailPage({
       style={{ backgroundColor: VOID_COLOR }}
     >
       <div className="pointer-events-none fixed inset-0 z-0">
-        <StarCanvasClient params={planet.star_params} />
+        <StarCanvasClient params={planet.params} />
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-dvh w-full max-w-lg flex-col p-5">
@@ -88,21 +88,29 @@ export default function StarDetailPage({
           </div>
 
           <ul className="text-sm opacity-80">
-            {planet.answer1 && <li>Name answer: {planet.answer1}</li>}
-            {planet.answer2 && <li>Mood: {planet.answer2}</li>}
-            {planet.answer3 && <li>Motion: {planet.answer3}</li>}
+            {Object.entries(planet.answers).map(([key, value]) => {
+              if (value === null || value === undefined || value === "") {
+                return null;
+              }
+              const text =
+                typeof value === "string" ? value : JSON.stringify(value);
+              return (
+                <li key={key}>
+                  <span className="opacity-60">{key}: </span>
+                  {text}
+                </li>
+              );
+            })}
           </ul>
 
           <div className="grid grid-cols-2 gap-2 text-sm">
-            {STAR_CONTROLS.map((control) => (
+            {STAR_KEYS.map((key) => (
               <div
-                key={control.key}
+                key={key}
                 className="rounded-box border border-white/10 px-3 py-2"
               >
-                <div className="opacity-60">{control.label}</div>
-                <div className="font-mono">
-                  {planet.star_params[control.key]}
-                </div>
+                <div className="opacity-60">{key}</div>
+                <div className="font-mono">{planet.params[key]}</div>
               </div>
             ))}
           </div>

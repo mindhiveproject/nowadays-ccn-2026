@@ -1,11 +1,11 @@
 import { VOID_COLOR } from "@/lib/theme";
 
 /**
- * The five values a participant actually customizes. Everything else in the
- * sketch is pinned to SKETCH_DEFAULTS below. This object is what gets stored
- * as JSON on the row.
+ * Fixed star tunables stored in `params` jsonb. Key set is owned by this app
+ * (not YQ). Answers remain a separate, open-ended jsonb bag.
  */
 export type StarParams = {
+  size: number;
   freq: number;
   noise: number;
   core: number;
@@ -23,6 +23,7 @@ export type StarControl = {
   hue?: boolean;
 };
 
+/** Participant-facing sliders — `size` is stored but not exposed here. */
 export const STAR_CONTROLS: readonly StarControl[] = [
   { key: "freq", label: "Frequency", min: 1, max: 12, step: 0.1 },
   { key: "noise", label: "Noise", min: 1, max: 100, step: 1 },
@@ -33,9 +34,17 @@ export const STAR_CONTROLS: readonly StarControl[] = [
 
 export type StarKey = keyof StarParams;
 
-export const STAR_KEYS = ["freq", "noise", "core", "hue", "hue2"] as const;
+export const STAR_KEYS = [
+  "size",
+  "freq",
+  "noise",
+  "core",
+  "hue",
+  "hue2",
+] as const;
 
 export const DEFAULT_STAR_PARAMS: StarParams = {
+  size: 120,
   freq: 5,
   noise: 20,
   core: 50,
@@ -43,26 +52,33 @@ export const DEFAULT_STAR_PARAMS: StarParams = {
   hue2: 0,
 };
 
+const SIZE_RANGE = { min: 1, max: 500 } as const;
+
 const CONTROL_BY_KEY = Object.fromEntries(
   STAR_CONTROLS.map((c) => [c.key, c]),
-) as Record<StarKey, StarControl>;
+) as Partial<Record<StarKey, StarControl>>;
 
 /** Clamps one value to its control's range; falls back to the default. */
 export function clampStar(key: StarKey, value: unknown): number {
-  const c = CONTROL_BY_KEY[key];
   const n = Number(value);
   if (!Number.isFinite(n)) return DEFAULT_STAR_PARAMS[key];
+  if (key === "size") {
+    return Math.min(SIZE_RANGE.max, Math.max(SIZE_RANGE.min, n));
+  }
+  const c = CONTROL_BY_KEY[key];
+  if (!c) return DEFAULT_STAR_PARAMS[key];
   return Math.min(c.max, Math.max(c.min, n));
 }
 
 /**
- * Coerces whatever came back from the `star_params` jsonb column into a
+ * Coerces whatever came back from the `params` jsonb column into a
  * complete, in-range StarParams. Missing or junk keys fall back to defaults.
  */
 export function toStarParams(value: unknown): StarParams {
   if (!value || typeof value !== "object") return { ...DEFAULT_STAR_PARAMS };
   const raw = value as Record<string, unknown>;
   return {
+    size: clampStar("size", raw.size),
     freq: clampStar("freq", raw.freq),
     noise: clampStar("noise", raw.noise),
     core: clampStar("core", raw.core),
@@ -74,12 +90,12 @@ export function toStarParams(value: unknown): StarParams {
 /**
  * Everything the sketch reads that participants don't touch. Merged with
  * StarParams at draw time — tweak the look here rather than in the component.
+ * Star radius comes from `params.size`, not from here.
  */
 export const SKETCH_DEFAULTS = {
   star: {
     x: 0.5,
     y: 0.5,
-    size: 120, // fixed — not exposed as a slider
   },
   glow: {
     tone: 1.5,

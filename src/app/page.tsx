@@ -81,10 +81,12 @@ export default function PublicStarFlow() {
         creator_name: creatorName.trim(),
         creator_email: creatorEmail.trim(),
         anonymous_id: anonymousId || getOrCreateAnonymousId(),
-        answer1: answer1.trim(),
-        answer2: answer2.trim(),
-        answer3: answer3.trim(),
-        star_params: params,
+        answers: {
+          answer1: answer1.trim(),
+          answer2: answer2.trim(),
+          answer3: answer3.trim(),
+        },
+        params,
         is_staged: false,
       });
       setPlanetId(saved.id);

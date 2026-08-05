@@ -1,18 +1,29 @@
 import { createClient } from "@/utils/supabase/client";
 import type {
   Planet,
+  PlanetAnswers,
   PlanetInsert,
   PlanetUpdate,
 } from "@/lib/types/planet";
 import { toStarParams } from "@/lib/types/star";
 
+/** Ensures answers jsonb is a plain object; arrays/scalars become `{}`. */
+export function toPlanetAnswers(value: unknown): PlanetAnswers {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return { ...(value as PlanetAnswers) };
+}
+
 /**
- * `star_params` is jsonb, so anything could come back — including rows written
- * before a control existed. Coerce every read through the star schema.
+ * Normalize jsonb columns on read: answers stay open-ended; params are
+ * coerced into the fixed StarParams shape.
  */
 export function normalizePlanet(row: unknown): Planet {
   const planet = row as Planet;
-  return { ...planet, star_params: toStarParams(planet.star_params) };
+  return {
+    ...planet,
+    answers: toPlanetAnswers(planet.answers),
+    params: toStarParams(planet.params),
+  };
 }
 
 export async function listPlanets(): Promise<Planet[]> {

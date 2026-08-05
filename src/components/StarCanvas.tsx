@@ -200,7 +200,7 @@ export default function StarCanvas({
           sceneShader.setUniform("uColB", hueToRGB(u.hue2));
           sceneShader.setUniform(
             "uRad",
-            (S.star.size / REF) *
+            (u.size / REF) *
               (S.glow.radBase + (u.core / 100) * S.glow.radCore),
           );
           sceneShader.setUniform("uBase", hexToRGB(S.glow.base));
@@ -222,7 +222,7 @@ export default function StarCanvas({
         function updateParticles(t: number) {
           const u = paramsRef.current;
           const P = S.particles;
-          const starSize = S.star.size * scl;
+          const starSize = u.size * scl;
           // slow orbit shrinks as core rises; fast wobble runs at u.freq
           const ampSlow = starSize * 0.5 * (1 - u.core / 100);
           const ampFast = starSize;
