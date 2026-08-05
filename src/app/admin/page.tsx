@@ -16,7 +16,7 @@ import { createClient } from "@/utils/supabase/client";
 import {
   listPlanets,
   normalizePlanet,
-  setPlanetStaged,
+  replaceStagedPlanets,
   updatePlanet,
 } from "@/lib/planets";
 import {
@@ -270,6 +270,74 @@ function PlanetSummaryCard({
   );
 }
 
+function ScoreSpotlightCard({
+  kind,
+  score,
+  planetAName,
+  planetBName,
+  emphasized,
+  onEdit,
+}: {
+  kind: "Latest" | "Previous";
+  score: SessionScore;
+  planetAName: string;
+  planetBName: string;
+  emphasized?: boolean;
+  onEdit: () => void;
+}) {
+  return (
+    <div
+      className={`flex flex-col gap-3 rounded-box border p-4 ${
+        emphasized
+          ? "border-primary bg-primary/10"
+          : "border-base-300 bg-base-200/40"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div
+            className={`text-xs font-bold uppercase tracking-wide ${
+              emphasized ? "text-primary" : "opacity-60"
+            }`}
+          >
+            {kind}
+          </div>
+          <div className="mt-1 text-4xl font-bold tabular-nums leading-none">
+            {score.score}
+          </div>
+        </div>
+        <button
+          type="button"
+          className={`btn btn-sm shrink-0 ${
+            emphasized ? "btn-primary" : "btn-outline"
+          }`}
+          onClick={onEdit}
+        >
+          Edit
+        </button>
+      </div>
+      <div className="min-w-0 text-sm">
+        <div className="font-medium truncate">
+          {planetAName}
+          <span className="mx-1.5 opacity-40">×</span>
+          {planetBName}
+        </div>
+        <div className="mt-1 text-xs opacity-60">
+          Recorded {formatDate(score.recorded_at)}
+        </div>
+        {score.strategy ? (
+          <div className="mt-0.5 truncate text-xs opacity-50">
+            {score.strategy}
+            {score.duration != null ? ` · ${score.duration}s` : ""}
+          </div>
+        ) : score.duration != null ? (
+          <div className="mt-0.5 text-xs opacity-50">{score.duration}s</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
@@ -280,6 +348,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
   const [staging, setStaging] = useState(false);
+  const [pendingStageIds, setPendingStageIds] = useState<string[]>([]);
   const [editing, setEditing] = useState<Planet | null>(null);
   const [viewingScore, setViewingScore] = useState<SessionScore | null>(null);
   const [creatingScore, setCreatingScore] = useState<SessionScoreDraft | null>(
@@ -327,6 +396,9 @@ export default function AdminPage() {
 
       if (planetsResult.status === "fulfilled") {
         setPlanets(planetsResult.value);
+        setPendingStageIds(
+          planetsResult.value.filter((p) => p.is_staged).map((p) => p.id),
+        );
       } else {
         setError(
           planetsResult.reason instanceof Error
@@ -384,6 +456,7 @@ export default function AdminPage() {
             } else if (payload.eventType === "DELETE") {
               const row = payload.old as Planet;
               setPlanets((prev) => prev.filter((p) => p.id !== row.id));
+              setPendingStageIds((prev) => prev.filter((id) => id !== row.id));
             }
           },
         )
@@ -431,7 +504,7 @@ export default function AdminPage() {
     };
   }, [authed, load]);
 
-  const staged = useMemo(
+  const liveStaged = useMemo(
     () => planets.filter((p) => p.is_staged),
     [planets],
   );
@@ -442,20 +515,34 @@ export default function AdminPage() {
     return map;
   }, [planets]);
 
-  const latestScore = sessionScores[0] ?? null;
+  const pendingStaged = useMemo(
+    () =>
+      pendingStageIds
+        .map((id) => planetById.get(id))
+        .filter((p): p is Planet => Boolean(p)),
+    [pendingStageIds, planetById],
+  );
 
-  const scorePlanetNames = useMemo(() => {
-    if (!latestScore) return null;
-    const a = planetById.get(latestScore.planet_a_id);
-    const b = planetById.get(latestScore.planet_b_id);
-    return {
-      a: a?.name ?? latestScore.planet_a_id.slice(0, 8),
-      b: b?.name ?? latestScore.planet_b_id.slice(0, 8),
-    };
-  }, [latestScore, planetById]);
+  const isDirty = useMemo(() => {
+    const live = new Set(liveStaged.map((p) => p.id));
+    const pending = new Set(pendingStageIds);
+    if (live.size !== pending.size) return true;
+    for (const id of pending) {
+      if (!live.has(id)) return true;
+    }
+    return false;
+  }, [liveStaged, pendingStageIds]);
+
+  const latestScore = sessionScores[0] ?? null;
+  const previousScore = sessionScores[1] ?? null;
 
   function planetLabel(id: string) {
     return planetById.get(id)?.name ?? id.slice(0, 8);
+  }
+
+  function openScoreEdit(score: SessionScore) {
+    setActiveTab("scores");
+    setViewingScore({ ...score });
   }
 
   async function onLogin(e: FormEvent) {
@@ -480,20 +567,30 @@ export default function AdminPage() {
     }
   }
 
-  async function toggleStage(planet: Planet) {
+  function togglePendingStage(planet: Planet) {
     setStageError(null);
-    const next = !planet.is_staged;
-    if (next && staged.length >= MAX_STAGED && !planet.is_staged) {
-      setStageError(
-        `Already staging ${MAX_STAGED} planets. Unstage one before staging another.`,
-      );
-      return;
-    }
+    setPendingStageIds((prev) => {
+      if (prev.includes(planet.id)) {
+        return prev.filter((id) => id !== planet.id);
+      }
+      if (prev.length >= MAX_STAGED) {
+        setStageError(
+          `Already staging ${MAX_STAGED} planets. Unstage one before staging another.`,
+        );
+        return prev;
+      }
+      return [...prev, planet.id];
+    });
+  }
+
+  async function fireStaging() {
+    setStageError(null);
     setStaging(true);
     try {
-      const updated = await setPlanetStaged(planet.id, next);
-      setPlanets((prev) =>
-        prev.map((p) => (p.id === updated.id ? updated : p)),
+      const updated = await replaceStagedPlanets(pendingStageIds);
+      setPlanets(updated);
+      setPendingStageIds(
+        updated.filter((p) => p.is_staged).map((p) => p.id),
       );
     } catch (err) {
       setStageError(
@@ -524,22 +621,7 @@ export default function AdminPage() {
                 : JSON.stringify(editing.answers.answer1),
         },
         params: editing.params,
-        is_staged: editing.is_staged,
       };
-
-      if (
-        payload.is_staged &&
-        !planets.find((p) => p.id === editing.id)?.is_staged
-      ) {
-        const others = staged.filter((p) => p.id !== editing.id).length;
-        if (others >= MAX_STAGED) {
-          setStageError(
-            `Already staging ${MAX_STAGED} planets. Unstage one before staging another.`,
-          );
-          setSaving(false);
-          return;
-        }
-      }
 
       await updatePlanet(editing.id, payload);
       setEditing(null);
@@ -696,21 +778,6 @@ export default function AdminPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div
-              className={`badge badge-lg ${
-                staged.length >= MAX_STAGED ? "badge-warning" : "badge-neutral"
-              }`}
-            >
-              Staged ({staged.length}/{MAX_STAGED})
-            </div>
-            {latestScore && (
-              <div className="badge badge-lg badge-primary">
-                Score {latestScore.score}
-                {scorePlanetNames
-                  ? ` · ${scorePlanetNames.a} × ${scorePlanetNames.b}`
-                  : null}
-              </div>
-            )}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -720,19 +787,29 @@ export default function AdminPage() {
             </button>
           </div>
         </div>
-        {staged.length > 0 && (
-          <div className="mx-auto flex max-w-7xl flex-wrap gap-2 px-4 pb-3">
-            {staged.map((p) => (
-              <span key={p.id} className="badge badge-outline">
-                {p.name}
-              </span>
-            ))}
-          </div>
-        )}
         {latestScore && (
-          <div className="mx-auto max-w-7xl px-4 pb-3 text-xs opacity-60">
-            Latest YQ session {latestScore.yq_session_id} · recorded{" "}
-            {formatDate(latestScore.recorded_at)}
+          <div className="mx-auto grid max-w-7xl gap-3 px-4 pb-4 sm:grid-cols-2">
+            <ScoreSpotlightCard
+              kind="Latest"
+              score={latestScore}
+              planetAName={planetLabel(latestScore.planet_a_id)}
+              planetBName={planetLabel(latestScore.planet_b_id)}
+              emphasized
+              onEdit={() => openScoreEdit(latestScore)}
+            />
+            {previousScore ? (
+              <ScoreSpotlightCard
+                kind="Previous"
+                score={previousScore}
+                planetAName={planetLabel(previousScore.planet_a_id)}
+                planetBName={planetLabel(previousScore.planet_b_id)}
+                onEdit={() => openScoreEdit(previousScore)}
+              />
+            ) : (
+              <div className="flex items-center rounded-box border border-dashed border-base-300 px-4 py-6 text-sm opacity-50">
+                No previous session score yet.
+              </div>
+            )}
           </div>
         )}
       </header>
@@ -751,6 +828,98 @@ export default function AdminPage() {
           <div className="alert alert-warning text-sm">{stageError}</div>
         )}
         {error && <div className="alert alert-error text-sm">{error}</div>}
+
+        <section className="rounded-box border border-base-300 bg-base-100 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">Staging for experiment</h2>
+              <p className="text-xs opacity-60">
+                Pre-select up to {MAX_STAGED} planets, then fire to set live{" "}
+                <code className="text-xs">is_staged</code> for YouQuantified.
+              </p>
+            </div>
+            <div
+              className={`badge badge-lg ${
+                pendingStaged.length >= MAX_STAGED
+                  ? "badge-warning"
+                  : "badge-neutral"
+              }`}
+            >
+              {pendingStaged.length}/{MAX_STAGED}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: MAX_STAGED }, (_, slot) => {
+              const planet = pendingStaged[slot];
+              if (!planet) {
+                return (
+                  <div
+                    key={`empty-${slot}`}
+                    className="flex min-h-20 items-center justify-center rounded-box border border-dashed border-base-300 text-sm opacity-50"
+                  >
+                    Empty slot
+                  </div>
+                );
+              }
+              return (
+                <div
+                  key={planet.id}
+                  className="flex items-center gap-3 rounded-box border border-base-300 px-3 py-2"
+                >
+                  <StarSwatch params={planet.params} size={48} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{planet.name}</div>
+                    <div className="truncate text-xs opacity-60">
+                      {planet.creator_name}
+                    </div>
+                    {planet.is_staged && (
+                      <span className="badge badge-warning badge-xs mt-1">
+                        Live
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    disabled={staging}
+                    onClick={() => togglePendingStage(planet)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {isDirty && liveStaged.length > 0 && (
+            <p className="mt-3 text-xs opacity-60">
+              Currently live:{" "}
+              {liveStaged.map((p) => p.name).join(", ")} — will be replaced on
+              fire.
+            </p>
+          )}
+          {isDirty && liveStaged.length === 0 && pendingStaged.length > 0 && (
+            <p className="mt-3 text-xs opacity-60">
+              Nothing live yet — fire to stage the selection.
+            </p>
+          )}
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              className="btn btn-warning"
+              disabled={!isDirty || staging}
+              onClick={() => void fireStaging()}
+            >
+              {staging ? (
+                <span className="loading loading-spinner loading-sm" />
+              ) : (
+                "Fire staging"
+              )}
+            </button>
+          </div>
+        </section>
 
         <div role="tablist" className="tabs tabs-box w-fit">
           <button
@@ -794,7 +963,7 @@ export default function AdminPage() {
                       <th>Name</th>
                       <th>Date</th>
                       <th>Link</th>
-                      <th>Staged</th>
+                      <th>Pre-stage</th>
                       <th />
                     </tr>
                   </thead>
@@ -809,6 +978,11 @@ export default function AdminPage() {
                           <div className="text-xs opacity-60">
                             {planet.creator_name}
                           </div>
+                          {planet.is_staged && (
+                            <span className="badge badge-warning badge-xs mt-1">
+                              Live
+                            </span>
+                          )}
                         </td>
                         <td className="whitespace-nowrap text-sm">
                           <div>{formatDate(planet.created_at)}</div>
@@ -830,8 +1004,8 @@ export default function AdminPage() {
                             type="checkbox"
                             className="toggle toggle-warning toggle-sm"
                             disabled={staging}
-                            checked={planet.is_staged}
-                            onChange={() => void toggleStage(planet)}
+                            checked={pendingStageIds.includes(planet.id)}
+                            onChange={() => togglePendingStage(planet)}
                           />
                         </td>
                         <td>
@@ -893,9 +1067,27 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sessionScores.map((score) => (
-                      <tr key={score.id} className="hover">
-                        <td className="font-medium">{score.score}</td>
+                    {sessionScores.map((score, index) => (
+                      <tr
+                        key={score.id}
+                        className={`hover ${
+                          index === 0 ? "bg-primary/5" : ""
+                        }`}
+                      >
+                        <td className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{score.score}</span>
+                            {index === 0 ? (
+                              <span className="badge badge-primary badge-sm">
+                                Latest
+                              </span>
+                            ) : index === 1 ? (
+                              <span className="badge badge-ghost badge-sm">
+                                Previous
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
                         <td className="max-w-[10rem] truncate text-sm">
                           {score.strategy ?? "—"}
                         </td>
@@ -935,9 +1127,9 @@ export default function AdminPage() {
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              onClick={() => setViewingScore({ ...score })}
+                              onClick={() => openScoreEdit(score)}
                             >
-                              View
+                              Edit
                             </button>
                             <button
                               type="button"
@@ -1045,18 +1237,6 @@ export default function AdminPage() {
                   }
                 />
               </div>
-
-              <label className="label cursor-pointer justify-start gap-3">
-                <input
-                  type="checkbox"
-                  className="toggle toggle-warning"
-                  checked={editing.is_staged}
-                  onChange={(e) =>
-                    setEditing({ ...editing, is_staged: e.target.checked })
-                  }
-                />
-                <span className="label-text">Staged</span>
-              </label>
 
               <div className="mt-2 flex justify-end gap-2">
                 <button

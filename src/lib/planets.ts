@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/client";
+import { MAX_STAGED } from "@/lib/constants";
 import type {
   Planet,
   PlanetAnswers,
@@ -103,4 +104,31 @@ export async function setPlanetStaged(
   is_staged: boolean,
 ): Promise<Planet> {
   return updatePlanet(id, { is_staged });
+}
+
+/** Clear all staged planets, then stage exactly `ids` (max MAX_STAGED). */
+export async function replaceStagedPlanets(ids: string[]): Promise<Planet[]> {
+  if (ids.length > MAX_STAGED) {
+    throw new Error(`At most ${MAX_STAGED} planets can be staged.`);
+  }
+
+  const supabase = createClient();
+
+  const { error: clearError } = await supabase
+    .from("planets")
+    .update({ is_staged: false })
+    .eq("is_staged", true);
+
+  if (clearError) throw clearError;
+
+  if (ids.length > 0) {
+    const { error: stageError } = await supabase
+      .from("planets")
+      .update({ is_staged: true })
+      .in("id", ids);
+
+    if (stageError) throw stageError;
+  }
+
+  return listPlanets();
 }
