@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import {
   STAR_CONTROLS,
   hueToCss,
+  type OrbitMode,
   type StarKey,
   type StarParams,
 } from "@/lib/types/star";
@@ -17,12 +18,14 @@ const HUE_TRACK = `linear-gradient(to right, ${Array.from(
 type StarSlidersProps = {
   params: StarParams;
   onChange: (key: StarKey, value: number) => void;
+  onOrbitModeChange: (mode: OrbitMode) => void;
   className?: string;
 };
 
 export default function StarSliders({
   params,
   onChange,
+  onOrbitModeChange,
   className = "",
 }: StarSlidersProps) {
   return (
@@ -59,6 +62,23 @@ export default function StarSliders({
           </label>
         );
       })}
+
+      <label className="label cursor-pointer justify-start gap-3 px-0">
+        <input
+          type="checkbox"
+          className="toggle toggle-primary"
+          checked={params.orbit_mode === "beads"}
+          onChange={(e) =>
+            onOrbitModeChange(e.target.checked ? "beads" : "clouds")
+          }
+        />
+        <span className="label-text flex flex-col gap-0.5">
+          <span>Orbit mode</span>
+          <span className="font-mono text-xs opacity-50">
+            {params.orbit_mode}
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

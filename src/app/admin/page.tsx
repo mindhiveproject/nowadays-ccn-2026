@@ -236,7 +236,15 @@ export default function AdminPage() {
         name: editing.name,
         creator_name: editing.creator_name,
         creator_email: editing.creator_email,
-        answers: editing.answers,
+        answers: {
+          answer1:
+            editing.answers.answer1 === null ||
+            editing.answers.answer1 === undefined
+              ? ""
+              : typeof editing.answers.answer1 === "string"
+                ? editing.answers.answer1
+                : JSON.stringify(editing.answers.answer1),
+        },
         params: editing.params,
         is_staged: editing.is_staged,
       };
@@ -468,39 +476,26 @@ export default function AdminPage() {
                   required
                 />
               </label>
-              <div className="flex flex-col gap-3">
-                <span className="label-text">Answers</span>
-                {Object.keys(editing.answers).length === 0 ? (
-                  <p className="text-sm opacity-60">No answers stored.</p>
-                ) : (
-                  Object.entries(editing.answers).map(([key, value]) => (
-                    <label key={key} className="form-control">
-                      <span className="label-text font-mono text-xs opacity-70">
-                        {key}
-                      </span>
-                      <input
-                        className="input input-bordered"
-                        value={
-                          value === null || value === undefined
-                            ? ""
-                            : typeof value === "string"
-                              ? value
-                              : JSON.stringify(value)
-                        }
-                        onChange={(e) =>
-                          setEditing({
-                            ...editing,
-                            answers: {
-                              ...editing.answers,
-                              [key]: e.target.value,
-                            },
-                          })
-                        }
-                      />
-                    </label>
-                  ))
-                )}
-              </div>
+              <label className="form-control">
+                <span className="label-text">Planet name answer</span>
+                <input
+                  className="input input-bordered"
+                  value={
+                    editing.answers.answer1 === null ||
+                    editing.answers.answer1 === undefined
+                      ? ""
+                      : typeof editing.answers.answer1 === "string"
+                        ? editing.answers.answer1
+                        : JSON.stringify(editing.answers.answer1)
+                  }
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      answers: { answer1: e.target.value },
+                    })
+                  }
+                />
+              </label>
 
               <div className="flex items-start gap-4">
                 <StarSwatch
@@ -518,6 +513,12 @@ export default function AdminPage() {
                         ...editing.params,
                         [key]: clampStar(key, value),
                       },
+                    })
+                  }
+                  onOrbitModeChange={(mode) =>
+                    setEditing({
+                      ...editing,
+                      params: { ...editing.params, orbit_mode: mode },
                     })
                   }
                 />

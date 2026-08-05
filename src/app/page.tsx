@@ -20,6 +20,8 @@ import {
 
 type Step = "identity" | "questions" | "editor" | "done";
 
+const NAME_QUESTION = QUESTIONS[0];
+
 export default function PublicStarFlow() {
   const [step, setStep] = useState<Step>("identity");
   const [anonymousId, setAnonymousId] = useState("");
@@ -28,8 +30,6 @@ export default function PublicStarFlow() {
   const [creatorName, setCreatorName] = useState("");
   const [creatorEmail, setCreatorEmail] = useState("");
   const [answer1, setAnswer1] = useState("");
-  const [answer2, setAnswer2] = useState("");
-  const [answer3, setAnswer3] = useState("");
   const [params, setParams] = useState<StarParams>(DEFAULT_STAR_PARAMS);
 
   const [saving, setSaving] = useState(false);
@@ -55,8 +55,8 @@ export default function PublicStarFlow() {
   function onIdentitySubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!creatorName.trim() || !creatorEmail.trim()) {
-      setError("Name and email are required.");
+    if (!creatorName.trim()) {
+      setError("Name is required.");
       return;
     }
     setStep("questions");
@@ -65,8 +65,8 @@ export default function PublicStarFlow() {
   function onQuestionsSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!answer1.trim() || !answer2.trim() || !answer3.trim()) {
-      setError("Please answer all three questions.");
+    if (!answer1.trim()) {
+      setError("Please name your planet.");
       return;
     }
     setStep("editor");
@@ -83,8 +83,6 @@ export default function PublicStarFlow() {
         anonymous_id: anonymousId || getOrCreateAnonymousId(),
         answers: {
           answer1: answer1.trim(),
-          answer2: answer2.trim(),
-          answer3: answer3.trim(),
         },
         params,
         is_staged: false,
@@ -145,14 +143,17 @@ export default function PublicStarFlow() {
             </label>
 
             <label className="form-control w-full">
-              <span className="label-text mb-1">Email</span>
+              <span className="label-text mb-1">
+                Email{" "}
+                <span className="opacity-50 font-normal">(optional)</span>
+              </span>
               <input
                 type="email"
                 className="input input-bordered w-full"
                 value={creatorEmail}
                 onChange={(e) => setCreatorEmail(e.target.value)}
                 autoComplete="email"
-                required
+                placeholder="you@example.com"
               />
             </label>
 
@@ -171,51 +172,21 @@ export default function PublicStarFlow() {
           >
             <div>
               <p className="text-sm uppercase tracking-widest opacity-60">
-                A few short questions
+                Name your planet
               </p>
               <h1 className="mt-1 text-2xl font-semibold">Shape your star</h1>
             </div>
 
-            {QUESTIONS.map((q) => {
-              if (q.type === "select") {
-                return (
-                  <label key={q.id} className="form-control w-full">
-                    <span className="label-text mb-1">{q.label}</span>
-                    <select
-                      className="select select-bordered w-full"
-                      value={answer2}
-                      onChange={(e) => setAnswer2(e.target.value)}
-                      required
-                    >
-                      <option value="" disabled>
-                        Choose one
-                      </option>
-                      {q.options.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                );
-              }
-
-              const value = q.id === "answer1" ? answer1 : answer3;
-              const setValue = q.id === "answer1" ? setAnswer1 : setAnswer3;
-
-              return (
-                <label key={q.id} className="form-control w-full">
-                  <span className="label-text mb-1">{q.label}</span>
-                  <input
-                    className="input input-bordered w-full"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder={q.placeholder}
-                    required
-                  />
-                </label>
-              );
-            })}
+            <label className="form-control w-full">
+              <span className="label-text mb-1">{NAME_QUESTION.label}</span>
+              <input
+                className="input input-bordered w-full"
+                value={answer1}
+                onChange={(e) => setAnswer1(e.target.value)}
+                placeholder={NAME_QUESTION.placeholder}
+                required
+              />
+            </label>
 
             {error && <p className="text-sm text-error">{error}</p>}
 
@@ -243,7 +214,13 @@ export default function PublicStarFlow() {
               </p>
             </div>
 
-            <StarSliders params={params} onChange={setParam} />
+            <StarSliders
+              params={params}
+              onChange={setParam}
+              onOrbitModeChange={(mode) =>
+                setParams((prev) => ({ ...prev, orbit_mode: mode }))
+              }
+            />
 
             {error && <p className="text-sm text-error">{error}</p>}
 
@@ -269,7 +246,7 @@ export default function PublicStarFlow() {
                   className="btn btn-ghost btn-sm"
                   onClick={() => setStep("questions")}
                 >
-                  Edit answers
+                  Edit name
                 </button>
               </div>
             ) : (

@@ -87,21 +87,28 @@ export default function StarDetailPage({
             </Link>
           </div>
 
-          <ul className="text-sm opacity-80">
-            {Object.entries(planet.answers).map(([key, value]) => {
-              if (value === null || value === undefined || value === "") {
-                return null;
-              }
-              const text =
-                typeof value === "string" ? value : JSON.stringify(value);
-              return (
-                <li key={key}>
-                  <span className="opacity-60">{key}: </span>
+          {(() => {
+            const nameAnswer = planet.answers.answer1;
+            if (
+              nameAnswer === null ||
+              nameAnswer === undefined ||
+              nameAnswer === ""
+            ) {
+              return null;
+            }
+            const text =
+              typeof nameAnswer === "string"
+                ? nameAnswer
+                : JSON.stringify(nameAnswer);
+            return (
+              <ul className="text-sm opacity-80">
+                <li>
+                  <span className="opacity-60">Name: </span>
                   {text}
                 </li>
-              );
-            })}
-          </ul>
+              </ul>
+            );
+          })()}
 
           <div className="grid grid-cols-2 gap-2 text-sm">
             {STAR_KEYS.map((key) => (

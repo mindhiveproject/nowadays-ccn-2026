@@ -4,6 +4,8 @@ import { VOID_COLOR } from "@/lib/theme";
  * Fixed star tunables stored in `params` jsonb. Key set is owned by this app
  * (not YQ). Answers remain a separate, open-ended jsonb bag.
  */
+export type OrbitMode = "clouds" | "beads";
+
 export type StarParams = {
   size: number;
   freq: number;
@@ -11,7 +13,11 @@ export type StarParams = {
   core: number;
   hue: number;
   hue2: number;
+  orbit_mode: OrbitMode;
 };
+
+/** Numeric tunables only — `orbit_mode` is edited via a toggle. */
+export type StarKey = Exclude<keyof StarParams, "orbit_mode">;
 
 export type StarControl = {
   key: StarKey;
@@ -32,8 +38,6 @@ export const STAR_CONTROLS: readonly StarControl[] = [
   { key: "hue2", label: "Outer hue", min: 0, max: 255, step: 1, hue: true },
 ] as const;
 
-export type StarKey = keyof StarParams;
-
 export const STAR_KEYS = [
   "size",
   "freq",
@@ -41,6 +45,7 @@ export const STAR_KEYS = [
   "core",
   "hue",
   "hue2",
+  "orbit_mode",
 ] as const;
 
 export const DEFAULT_STAR_PARAMS: StarParams = {
@@ -50,6 +55,7 @@ export const DEFAULT_STAR_PARAMS: StarParams = {
   core: 50,
   hue: 69,
   hue2: 0,
+  orbit_mode: "clouds",
 };
 
 const SIZE_RANGE = { min: 1, max: 500 } as const;
@@ -70,6 +76,10 @@ export function clampStar(key: StarKey, value: unknown): number {
   return Math.min(c.max, Math.max(c.min, n));
 }
 
+export function toOrbitMode(value: unknown): OrbitMode {
+  return value === "beads" ? "beads" : "clouds";
+}
+
 /**
  * Coerces whatever came back from the `params` jsonb column into a
  * complete, in-range StarParams. Missing or junk keys fall back to defaults.
@@ -84,6 +94,7 @@ export function toStarParams(value: unknown): StarParams {
     core: clampStar("core", raw.core),
     hue: clampStar("hue", raw.hue),
     hue2: clampStar("hue2", raw.hue2),
+    orbit_mode: toOrbitMode(raw.orbit_mode),
   };
 }
 
