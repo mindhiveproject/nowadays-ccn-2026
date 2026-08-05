@@ -16,6 +16,12 @@ export function getOrCreateAnonymousId(): string {
   return id;
 }
 
+/** Read-only peek. Unlike `getOrCreateAnonymousId`, this never writes. */
+export function getAnonymousId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(ANONYMOUS_ID_KEY);
+}
+
 export function getStoredPlanetId(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(PLANET_ID_KEY);

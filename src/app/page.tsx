@@ -7,6 +7,8 @@ import {
   TermButton,
   TermField,
   TermGhostButton,
+  TermLinkButton,
+  TermRule,
 } from "@/components/terminal";
 import {
   clearStoredPlanetId,
@@ -302,33 +304,57 @@ export default function PublicStarFlow() {
             {/* Empty space the star lives behind. */}
             <div className="min-h-[38vh] flex-1" />
 
-            <StarControls
-              params={params}
-              onChange={setParam}
-              onOrbitModeChange={(mode) =>
-                setParams((prev) => ({ ...prev, orbit_mode: mode }))
-              }
-            />
+            {step === "editor" ? (
+              <>
+                <StarControls
+                  params={params}
+                  onChange={setParam}
+                  onOrbitModeChange={(mode) =>
+                    setParams((prev) => ({ ...prev, orbit_mode: mode }))
+                  }
+                />
 
-            {error && <p className="mt-4 text-sm text-red-300">{error}</p>}
+                {error && <p className="mt-4 text-sm text-red-300">{error}</p>}
 
-            <div className="mt-8 flex items-center justify-between">
-              <TermGhostButton onClick={() => setStep("questions")}>
-                back
-              </TermGhostButton>
-              <TermButton disabled={saving} onClick={() => void onValidate()}>
-                {saving ? "saving..." : "save"}
-              </TermButton>
-            </div>
+                <div className="mt-8 flex items-center justify-between">
+                  <TermGhostButton onClick={() => setStep("questions")}>
+                    back
+                  </TermGhostButton>
+                  <TermButton
+                    disabled={saving}
+                    onClick={() => void onValidate()}
+                  >
+                    {saving ? "saving..." : "save"}
+                  </TermButton>
+                </div>
+              </>
+            ) : (
+              /*
+               * Saved. The sliders go away so the planet they landed on is the
+               * only thing on screen — `edit` brings them back.
+               */
+              <>
+                <TermRule />
+                <p className="mt-6 text-base">you are ready to participate</p>
 
-            {step === "done" && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="mt-6 self-center text-xs text-dim underline underline-offset-4 hover:text-paper/80"
-              >
-                start a new planet
-              </button>
+                {/* Wraps rather than collides on a ~320px screen. */}
+                <div className="mt-8 flex flex-wrap items-center justify-between gap-4">
+                  <TermGhostButton onClick={() => setStep("editor")}>
+                    edit
+                  </TermGhostButton>
+                  <TermLinkButton href="/results">
+                    view your results
+                  </TermLinkButton>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="mt-6 self-center text-xs text-dim underline underline-offset-4 hover:text-paper/80"
+                >
+                  start a new planet
+                </button>
+              </>
             )}
           </div>
         )}

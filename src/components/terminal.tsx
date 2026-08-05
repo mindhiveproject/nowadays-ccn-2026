@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import Link from "next/link";
+import type { ComponentProps, ReactNode } from "react";
 
 /**
  * Shared chrome for the participant flow. Terminal-flavored: monospace, square
@@ -36,6 +37,26 @@ export function TermButton({
     >
       {children}
     </button>
+  );
+}
+
+/** `TermButton`'s look on a real link, so navigation still prefetches. */
+export function TermLinkButton({
+  children,
+  href,
+  className = "",
+}: {
+  children: ReactNode;
+  href: ComponentProps<typeof Link>["href"];
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`inline-block bg-paper px-6 py-2 text-void transition-opacity hover:opacity-85 ${className}`}
+    >
+      {children}
+    </Link>
   );
 }
 
