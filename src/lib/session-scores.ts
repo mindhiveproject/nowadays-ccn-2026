@@ -1,6 +1,7 @@
 import { createClient } from "@/utils/supabase/client";
 import type {
   SessionScore,
+  SessionScoreInsert,
   SessionScoreUpdate,
 } from "@/lib/types/session-score";
 
@@ -52,6 +53,29 @@ export async function getSessionScoreByYqId(
 
   if (error) throw error;
   return (data as SessionScore | null) ?? null;
+}
+
+export async function createSessionScore(
+  payload: SessionScoreInsert,
+): Promise<SessionScore> {
+  const res = await fetch("/api/admin/session-scores", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await res.json()) as {
+    ok?: boolean;
+    session_score?: SessionScore;
+    error?: string;
+  };
+
+  if (!res.ok || !data.session_score) {
+    throw new Error(data.error ?? "Failed to create session score");
+  }
+
+  return data.session_score;
 }
 
 export async function updateSessionScore(

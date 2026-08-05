@@ -22,6 +22,9 @@ const dmMono = DM_Mono({
 export const metadata: Metadata = {
   title: "Planet Sync",
   description: "Create and tune a shared planet system",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

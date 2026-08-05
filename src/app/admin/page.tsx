@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -19,6 +20,7 @@ import {
   updatePlanet,
 } from "@/lib/planets";
 import {
+  createSessionScore,
   deleteSessionScore,
   listSessionScores,
   updateSessionScore,
@@ -26,9 +28,34 @@ import {
 import type { Planet, PlanetUpdate } from "@/lib/types/planet";
 import type {
   SessionScore,
+  SessionScoreInsert,
   SessionScoreUpdate,
 } from "@/lib/types/session-score";
 import { clampStar, type StarKey } from "@/lib/types/star";
+
+type SessionScoreDraft = {
+  yq_session_id: string;
+  planet_a_id: string;
+  planet_b_id: string;
+  score: number;
+  strategy: string | null;
+  duration: number | null;
+  recorded_at: string;
+};
+
+function newSessionScoreDraft(planets: Planet[]): SessionScoreDraft {
+  const a = planets[0]?.id ?? "";
+  const b = planets.find((p) => p.id !== a)?.id ?? "";
+  return {
+    yq_session_id: `manual-${crypto.randomUUID()}`,
+    planet_a_id: a,
+    planet_b_id: b,
+    score: 0,
+    strategy: null,
+    duration: null,
+    recorded_at: new Date().toISOString(),
+  };
+}
 
 function formatDate(value: string) {
   try {
@@ -65,6 +92,134 @@ function sortScoresByRecordedAt(scores: SessionScore[]): SessionScore[] {
   return [...scores].sort(
     (a, b) =>
       new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
+  );
+}
+
+function planetOptionLabel(planet: Planet): string {
+  return `${planet.name} (${planet.creator_name})`;
+}
+
+function PlanetSearchSelect({
+  label,
+  planets,
+  value,
+  onChange,
+  required,
+}: {
+  label: string;
+  planets: Planet[];
+  value: string;
+  onChange: (id: string) => void;
+  required?: boolean;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const selected = planets.find((p) => p.id === value);
+  const displayLabel = selected
+    ? planetOptionLabel(selected)
+    : value
+      ? `${value} (missing)`
+      : "";
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return planets;
+    return planets.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.creator_name.toLowerCase().includes(q) ||
+        p.creator_email.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q),
+    );
+  }, [planets, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointer(e: MouseEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    return () => document.removeEventListener("mousedown", onDocPointer);
+  }, [open]);
+
+  function close() {
+    setOpen(false);
+    setQuery("");
+  }
+
+  function pick(id: string) {
+    onChange(id);
+    close();
+  }
+
+  return (
+    <div className="form-control">
+      <span className="label-text">{label}</span>
+      <div className="relative" ref={rootRef}>
+        <input type="hidden" value={value} required={required} />
+        <input
+          className="input input-bordered w-full"
+          value={open ? query : displayLabel}
+          placeholder="Search by name, creator, or id…"
+          autoComplete="off"
+          onFocus={() => {
+            setOpen(true);
+            setQuery("");
+          }}
+          onChange={(e) => {
+            setOpen(true);
+            setQuery(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") close();
+          }}
+        />
+        {open && (
+          <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-box border border-base-300 bg-base-100 py-1 shadow-lg">
+            {!selected && value ? (
+              <li>
+                <button
+                  type="button"
+                  className="flex w-full px-3 py-2 text-left text-sm hover:bg-base-200"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(value)}
+                >
+                  <span className="font-mono text-xs opacity-70">
+                    {value} (missing)
+                  </span>
+                </button>
+              </li>
+            ) : null}
+            {filtered.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  className={`flex w-full flex-col px-3 py-2 text-left text-sm hover:bg-base-200 ${
+                    p.id === value ? "bg-base-200" : ""
+                  }`}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(p.id)}
+                >
+                  <span className="truncate font-medium">{p.name}</span>
+                  <span className="truncate text-xs opacity-60">
+                    {p.creator_name}
+                    {p.creator_email ? ` · ${p.creator_email}` : ""}
+                  </span>
+                </button>
+              </li>
+            ))}
+            {filtered.length === 0 && (
+              <li className="px-3 py-2 text-sm opacity-60">No matches</li>
+            )}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -127,14 +282,38 @@ export default function AdminPage() {
   const [staging, setStaging] = useState(false);
   const [editing, setEditing] = useState<Planet | null>(null);
   const [viewingScore, setViewingScore] = useState<SessionScore | null>(null);
+  const [creatingScore, setCreatingScore] = useState<SessionScoreDraft | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [scoreSaving, setScoreSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"planets" | "scores">("planets");
 
   useEffect(() => {
-    if (sessionStorage.getItem(ADMIN_SESSION_KEY) === "1") {
-      setAuthed(true);
-    }
+    if (sessionStorage.getItem(ADMIN_SESSION_KEY) !== "1") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/session", {
+          credentials: "same-origin",
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          setAuthed(true);
+        } else {
+          sessionStorage.removeItem(ADMIN_SESSION_KEY);
+          setAuthed(false);
+        }
+      } catch {
+        if (!cancelled) {
+          sessionStorage.removeItem(ADMIN_SESSION_KEY);
+          setAuthed(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const load = useCallback(async () => {
@@ -382,6 +561,14 @@ export default function AdminPage() {
         planet_a_id: viewingScore.planet_a_id,
         planet_b_id: viewingScore.planet_b_id,
         recorded_at: viewingScore.recorded_at,
+        strategy: viewingScore.strategy?.trim()
+          ? viewingScore.strategy.trim()
+          : null,
+        duration:
+          viewingScore.duration == null ||
+          !Number.isFinite(viewingScore.duration)
+            ? null
+            : viewingScore.duration,
       };
       const updated = await updateSessionScore(viewingScore.id, payload);
       setSessionScores((prev) =>
@@ -394,6 +581,57 @@ export default function AdminPage() {
       setError(
         err instanceof Error ? err.message : "Failed to save session score.",
       );
+    } finally {
+      setScoreSaving(false);
+    }
+  }
+
+  async function saveScoreCreate(e: FormEvent) {
+    e.preventDefault();
+    if (!creatingScore) return;
+    if (!creatingScore.planet_a_id || !creatingScore.planet_b_id) {
+      setError("Select both Planet A and Planet B.");
+      return;
+    }
+    if (creatingScore.planet_a_id === creatingScore.planet_b_id) {
+      setError("Planet A and Planet B must be distinct.");
+      return;
+    }
+    setScoreSaving(true);
+    setError(null);
+    try {
+      const payload: SessionScoreInsert = {
+        yq_session_id: creatingScore.yq_session_id.trim(),
+        planet_a_id: creatingScore.planet_a_id,
+        planet_b_id: creatingScore.planet_b_id,
+        score: creatingScore.score,
+        recorded_at: creatingScore.recorded_at,
+        strategy: creatingScore.strategy?.trim()
+          ? creatingScore.strategy.trim()
+          : null,
+        duration:
+          creatingScore.duration == null ||
+          !Number.isFinite(creatingScore.duration)
+            ? null
+            : creatingScore.duration,
+      };
+      const created = await createSessionScore(payload);
+      setSessionScores((prev) =>
+        sortScoresByRecordedAt(
+          prev.some((s) => s.id === created.id) ? prev : [created, ...prev],
+        ),
+      );
+      setCreatingScore(null);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to create session score.";
+      if (message === "Unauthorized") {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        setAuthed(false);
+        setCreatingScore(null);
+        setLoginError("Session expired. Please log in again.");
+      }
+      setError(message);
     } finally {
       setScoreSaving(false);
     }
@@ -616,7 +854,25 @@ export default function AdminPage() {
             )}
           </section>
         ) : (
-          <section>
+          <section className="flex flex-col gap-3">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={planets.length < 2}
+                title={
+                  planets.length < 2
+                    ? "Need at least two planets to create a pair score"
+                    : undefined
+                }
+                onClick={() => {
+                  setError(null);
+                  setCreatingScore(newSessionScoreDraft(planets));
+                }}
+              >
+                Create
+              </button>
+            </div>
             {sessionScores.length === 0 ? (
               <div className="rounded-box border border-dashed border-base-300 p-8 text-center text-sm opacity-60">
                 No session scores yet.
@@ -627,6 +883,8 @@ export default function AdminPage() {
                   <thead>
                     <tr>
                       <th>Score</th>
+                      <th>Strategy</th>
+                      <th>Duration</th>
                       <th>YQ session</th>
                       <th>Planet A</th>
                       <th>Planet B</th>
@@ -638,6 +896,12 @@ export default function AdminPage() {
                     {sessionScores.map((score) => (
                       <tr key={score.id} className="hover">
                         <td className="font-medium">{score.score}</td>
+                        <td className="max-w-[10rem] truncate text-sm">
+                          {score.strategy ?? "—"}
+                        </td>
+                        <td className="text-sm">
+                          {score.duration == null ? "—" : score.duration}
+                        </td>
                         <td>
                           <span className="font-mono text-xs">
                             {score.yq_session_id.length > 24
@@ -824,6 +1088,153 @@ export default function AdminPage() {
         </dialog>
       )}
 
+      {creatingScore && (
+        <dialog className="modal modal-open">
+          <div className="modal-box max-w-2xl">
+            <h3 className="text-lg font-bold">Create session score</h3>
+            <p className="mt-1 text-sm opacity-60">
+              Pair two planets and set a score. Session id is generated and
+              editable.
+            </p>
+
+            <form
+              onSubmit={saveScoreCreate}
+              className="mt-4 flex flex-col gap-3"
+            >
+              <label className="form-control">
+                <span className="label-text">Session id</span>
+                <input
+                  className="input input-bordered font-mono text-sm"
+                  value={creatingScore.yq_session_id}
+                  onChange={(e) =>
+                    setCreatingScore({
+                      ...creatingScore,
+                      yq_session_id: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Score</span>
+                <input
+                  type="number"
+                  step="any"
+                  className="input input-bordered"
+                  value={creatingScore.score}
+                  onChange={(e) =>
+                    setCreatingScore({
+                      ...creatingScore,
+                      score: Number(e.target.value),
+                    })
+                  }
+                  required
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Strategy</span>
+                <input
+                  className="input input-bordered"
+                  value={creatingScore.strategy ?? ""}
+                  onChange={(e) =>
+                    setCreatingScore({
+                      ...creatingScore,
+                      strategy:
+                        e.target.value.length === 0 ? null : e.target.value,
+                    })
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Duration (seconds)</span>
+                <input
+                  type="number"
+                  step="any"
+                  className="input input-bordered"
+                  value={creatingScore.duration ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setCreatingScore({
+                      ...creatingScore,
+                      duration: raw === "" ? null : Number(e.target.value),
+                    });
+                  }}
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Recorded at</span>
+                <input
+                  type="datetime-local"
+                  className="input input-bordered"
+                  value={toDatetimeLocalValue(creatingScore.recorded_at)}
+                  onChange={(e) => {
+                    const d = new Date(e.target.value);
+                    if (Number.isNaN(d.getTime())) return;
+                    setCreatingScore({
+                      ...creatingScore,
+                      recorded_at: d.toISOString(),
+                    });
+                  }}
+                  required
+                />
+              </label>
+              <PlanetSearchSelect
+                label="Planet A"
+                planets={planets}
+                value={creatingScore.planet_a_id}
+                onChange={(id) =>
+                  setCreatingScore({
+                    ...creatingScore,
+                    planet_a_id: id,
+                  })
+                }
+                required
+              />
+              <PlanetSearchSelect
+                label="Planet B"
+                planets={planets}
+                value={creatingScore.planet_b_id}
+                onChange={(id) =>
+                  setCreatingScore({
+                    ...creatingScore,
+                    planet_b_id: id,
+                  })
+                }
+                required
+              />
+
+              <div className="mt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setCreatingScore(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={scoreSaving}
+                >
+                  {scoreSaving ? (
+                    <span className="loading loading-spinner loading-sm" />
+                  ) : (
+                    "Create"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button type="button" onClick={() => setCreatingScore(null)}>
+              close
+            </button>
+          </form>
+        </dialog>
+      )}
+
       {viewingScore && (
         <dialog className="modal modal-open">
           <div className="modal-box max-w-2xl">
@@ -869,6 +1280,39 @@ export default function AdminPage() {
                 />
               </label>
               <label className="form-control">
+                <span className="label-text">Strategy</span>
+                <input
+                  className="input input-bordered"
+                  value={viewingScore.strategy ?? ""}
+                  onChange={(e) =>
+                    setViewingScore({
+                      ...viewingScore,
+                      strategy:
+                        e.target.value.length === 0 ? null : e.target.value,
+                    })
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Duration (seconds)</span>
+                <input
+                  type="number"
+                  step="any"
+                  className="input input-bordered"
+                  value={viewingScore.duration ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setViewingScore({
+                      ...viewingScore,
+                      duration:
+                        raw === "" ? null : Number(e.target.value),
+                    });
+                  }}
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="form-control">
                 <span className="label-text">Recorded at</span>
                 <input
                   type="datetime-local"
@@ -885,54 +1329,30 @@ export default function AdminPage() {
                   required
                 />
               </label>
-              <label className="form-control">
-                <span className="label-text">Planet A</span>
-                <select
-                  className="select select-bordered"
-                  value={viewingScore.planet_a_id}
-                  onChange={(e) =>
-                    setViewingScore({
-                      ...viewingScore,
-                      planet_a_id: e.target.value,
-                    })
-                  }
-                >
-                  {!planetById.has(viewingScore.planet_a_id) && (
-                    <option value={viewingScore.planet_a_id}>
-                      {viewingScore.planet_a_id} (missing)
-                    </option>
-                  )}
-                  {planets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.creator_name})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="form-control">
-                <span className="label-text">Planet B</span>
-                <select
-                  className="select select-bordered"
-                  value={viewingScore.planet_b_id}
-                  onChange={(e) =>
-                    setViewingScore({
-                      ...viewingScore,
-                      planet_b_id: e.target.value,
-                    })
-                  }
-                >
-                  {!planetById.has(viewingScore.planet_b_id) && (
-                    <option value={viewingScore.planet_b_id}>
-                      {viewingScore.planet_b_id} (missing)
-                    </option>
-                  )}
-                  {planets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.creator_name})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <PlanetSearchSelect
+                label="Planet A"
+                planets={planets}
+                value={viewingScore.planet_a_id}
+                onChange={(id) =>
+                  setViewingScore({
+                    ...viewingScore,
+                    planet_a_id: id,
+                  })
+                }
+                required
+              />
+              <PlanetSearchSelect
+                label="Planet B"
+                planets={planets}
+                value={viewingScore.planet_b_id}
+                onChange={(id) =>
+                  setViewingScore({
+                    ...viewingScore,
+                    planet_b_id: id,
+                  })
+                }
+                required
+              />
 
               <div className="text-xs opacity-50">
                 Created {formatDate(viewingScore.created_at)} · Updated{" "}
