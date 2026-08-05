@@ -5,12 +5,14 @@ import StarCanvasClient from "@/components/StarCanvasClient";
 import StarSliders from "@/components/StarSliders";
 import { QUESTIONS } from "@/lib/constants";
 import {
+  clearStoredPlanetId,
   getOrCreateAnonymousId,
   getStoredPlanetId,
   setStoredPlanetId,
 } from "@/lib/identity";
-import { upsertPlanetById } from "@/lib/planets";
+import { getPlanet, upsertPlanetById } from "@/lib/planets";
 import { VOID_COLOR } from "@/lib/theme";
+import type { Planet } from "@/lib/types/planet";
 import {
   DEFAULT_STAR_PARAMS,
   clampStar,
@@ -22,8 +24,14 @@ type Step = "identity" | "questions" | "editor" | "done";
 
 const NAME_QUESTION = QUESTIONS[0];
 
+function answerText(answers: Planet["answers"], key: string): string {
+  const value = answers[key];
+  return typeof value === "string" ? value : "";
+}
+
 export default function PublicStarFlow() {
   const [step, setStep] = useState<Step>("identity");
+  const [restoring, setRestoring] = useState(true);
   const [anonymousId, setAnonymousId] = useState("");
   const [planetId, setPlanetId] = useState<string | null>(null);
 
@@ -36,9 +44,68 @@ export default function PublicStarFlow() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  function applyPlanet(planet: Planet) {
+    setPlanetId(planet.id);
+    setCreatorName(planet.creator_name);
+    setCreatorEmail(planet.creator_email);
+    setAnswer1(answerText(planet.answers, "answer1") || planet.name);
+    setParams(planet.params);
+    setStep("done");
+  }
+
+  function resetForm() {
+    const confirmed = window.confirm(
+      "Start a brand-new star? Your current one stays saved — this just begins a fresh one on this device.",
+    );
+    if (!confirmed) return;
+    clearStoredPlanetId();
+    setPlanetId(null);
+    setCreatorName("");
+    setCreatorEmail("");
+    setAnswer1("");
+    setParams({ ...DEFAULT_STAR_PARAMS });
+    setError(null);
+    setToast(null);
+    setStep("identity");
+  }
+
   useEffect(() => {
-    setAnonymousId(getOrCreateAnonymousId());
-    setPlanetId(getStoredPlanetId());
+    let cancelled = false;
+    const anon = getOrCreateAnonymousId();
+    const storedId = getStoredPlanetId();
+    setAnonymousId(anon);
+
+    if (!storedId) {
+      setRestoring(false);
+      return;
+    }
+
+    void getPlanet(storedId)
+      .then((planet) => {
+        if (cancelled) return;
+        if (planet && planet.anonymous_id === anon) {
+          applyPlanet(planet);
+          setToast("Welcome back — your star is still here.");
+          window.setTimeout(() => setToast(null), 3000);
+        } else {
+          // Stale or foreign id — don't leave a trap that overwrites later.
+          clearStoredPlanetId();
+          setPlanetId(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          clearStoredPlanetId();
+          setPlanetId(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const starName = useMemo(() => {
@@ -97,6 +164,17 @@ export default function PublicStarFlow() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (restoring) {
+    return (
+      <div
+        className="flex min-h-dvh items-center justify-center"
+        style={{ backgroundColor: VOID_COLOR }}
+      >
+        <span className="loading loading-spinner loading-lg text-primary" />
+      </div>
+    );
   }
 
   return (
@@ -210,7 +288,9 @@ export default function PublicStarFlow() {
             <div>
               <h2 className="text-lg font-semibold">{starName}</h2>
               <p className="text-xs opacity-60">
-                Tune your star, then validate your choice.
+                {step === "done"
+                  ? "Your star is saved. Tweak anytime, or start a new one."
+                  : "Tune your star, then validate your choice."}
               </p>
             </div>
 
@@ -247,6 +327,13 @@ export default function PublicStarFlow() {
                   onClick={() => setStep("questions")}
                 >
                   Edit name
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm opacity-70"
+                  onClick={resetForm}
+                >
+                  Start a new star
                 </button>
               </div>
             ) : (

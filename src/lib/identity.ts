@@ -25,3 +25,8 @@ export function setStoredPlanetId(id: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(PLANET_ID_KEY, id);
 }
+
+export function clearStoredPlanetId(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(PLANET_ID_KEY);
+}
