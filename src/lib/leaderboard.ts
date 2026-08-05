@@ -35,7 +35,7 @@ export function indexPlanets(planets: Planet[]): PlanetById {
 /** A score can outlive its planet's row in the list we happen to hold. */
 function toLeaderboardPlanet(id: string, planetById: PlanetById) {
   const planet = planetById.get(id);
-  if (!planet) return { id, name: "unknown planet", ink: DIM_COLOR };
+  if (!planet) return { id, name: "unknown star", ink: DIM_COLOR };
   return { id, name: planet.name, ink: starInkColor(planet.params.hue) };
 }
 
@@ -49,10 +49,16 @@ function toRow(
   score: SessionScore,
   planetById: PlanetById,
   rank: number,
-  /** Pins this planet to the left of the `/` — used on a participant's board. */
-  leadPlanetId?: string,
+  /**
+   * Pins the reader's own planet to the left of the `/` — a set, because on
+   * their own board every planet they made counts as theirs.
+   */
+  leadPlanetIds?: ReadonlySet<string>,
 ): LeaderboardRow {
-  const flip = leadPlanetId !== undefined && score.planet_b_id === leadPlanetId;
+  const flip =
+    leadPlanetIds !== undefined &&
+    !leadPlanetIds.has(score.planet_a_id) &&
+    leadPlanetIds.has(score.planet_b_id);
   const [aId, bId] = flip
     ? [score.planet_b_id, score.planet_a_id]
     : [score.planet_a_id, score.planet_b_id];
@@ -102,19 +108,47 @@ export function buildGlobalLeaderboard(
   return rows;
 }
 
-/** Every run one planet took part in, best to worst, itself always on the left. */
-export function buildPlanetLeaderboard(
+/**
+ * One participant's board: every run any of their planets took part in, best
+ * to worst, their own planet always on the left.
+ *
+ * Ranked as a single list rather than one board per planet — a person with
+ * three planets is still reading for their best run, not their best planet. A
+ * run between two of their own planets appears once, unflipped.
+ */
+export function buildOwnLeaderboard(
   scores: SessionScore[],
   planetById: PlanetById,
-  planetId: string,
+  planetIds: ReadonlySet<string>,
 ): LeaderboardRow[] {
   return scores
     .filter(
       (score) =>
-        score.planet_a_id === planetId || score.planet_b_id === planetId,
+        planetIds.has(score.planet_a_id) || planetIds.has(score.planet_b_id),
     )
     .sort(byScoreDesc)
-    .map((score, i) => toRow(score, planetById, i + 1, planetId));
+    .map((score, i) => toRow(score, planetById, i + 1, planetIds));
+}
+
+/** What one planet has to show for itself, for the planet list. */
+export type PlanetSummary = { runs: number; best: number | null };
+
+export function summarizePlanet(
+  scores: SessionScore[],
+  planetId: string,
+): PlanetSummary {
+  let runs = 0;
+  let best: number | null = null;
+
+  for (const score of scores) {
+    if (score.planet_a_id !== planetId && score.planet_b_id !== planetId) {
+      continue;
+    }
+    runs += 1;
+    if (best === null || score.score > best) best = score.score;
+  }
+
+  return { runs, best };
 }
 
 /** Scores land on a 0–100 scale; one decimal is all the board needs. */

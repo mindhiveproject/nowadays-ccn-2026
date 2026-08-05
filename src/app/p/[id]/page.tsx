@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import StarCanvasClient from "@/components/StarCanvasClient";
+import { TermLoading } from "@/components/terminal";
 import { getPlanet } from "@/lib/planets";
 import { PAPER_COLOR, VOID_COLOR } from "@/lib/theme";
 import type { Planet } from "@/lib/types/planet";
@@ -28,7 +29,7 @@ export default function StarDetailPage({
       .then((row) => {
         if (!cancelled) {
           setPlanet(row);
-          if (!row) setError("planet not found");
+          if (!row) setError("star not found");
         }
       })
       .catch((err: unknown) => {
@@ -44,16 +45,7 @@ export default function StarDetailPage({
     };
   }, [id]);
 
-  if (loading) {
-    return (
-      <div
-        className="font-terminal flex min-h-dvh items-center justify-center text-dim"
-        style={{ backgroundColor: VOID_COLOR }}
-      >
-        loading...
-      </div>
-    );
-  }
+  if (loading) return <TermLoading />;
 
   if (error || !planet) {
     return (
@@ -91,7 +83,7 @@ export default function StarDetailPage({
         <header className="flex items-baseline justify-between gap-3">
           <div className="flex min-w-0 items-baseline gap-3">
             <span className="text-sm" style={{ color: ink }}>
-              planet_name :
+              star_name :
             </span>
             <span
               className="truncate text-lg"

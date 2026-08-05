@@ -8,7 +8,7 @@ import { PAPER_COLOR, VOID_COLOR } from "@/lib/theme";
 import { useScoreboard } from "@/lib/use-scoreboard";
 
 /**
- * The global board: every planet's best run, ranked. Reached directly by URL —
+ * The global board: every star's best run, ranked. Reached directly by URL —
  * it carries no navigation of its own.
  */
 export default function LeaderboardPage() {
@@ -33,7 +33,7 @@ export default function LeaderboardPage() {
         <header>
           <h1 className="text-lg">scoreboard</h1>
           <p className="mt-2 max-w-[34ch] text-sm leading-relaxed text-dim">
-            the best run of every planet, across the whole experience
+            the best run of every star, across the whole experience
           </p>
         </header>
 

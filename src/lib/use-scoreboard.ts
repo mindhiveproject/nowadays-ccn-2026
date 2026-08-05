@@ -10,6 +10,8 @@ import type { SessionScore } from "@/lib/types/session-score";
 
 type Scoreboard = {
   scores: SessionScore[];
+  /** Newest first, as the query returns them. */
+  planets: Planet[];
   planetById: PlanetById;
   loading: boolean;
   error: string | null;
@@ -92,5 +94,5 @@ export function useScoreboard(): Scoreboard {
 
   const planetById = useMemo(() => indexPlanets(planets), [planets]);
 
-  return { scores, planetById, loading, error };
+  return { scores, planets, planetById, loading, error };
 }

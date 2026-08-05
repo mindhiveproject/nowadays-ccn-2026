@@ -2,12 +2,28 @@
 
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
+import { VOID_COLOR } from "@/lib/theme";
 
 /**
  * Shared chrome for the participant flow. Terminal-flavored: monospace, square
  * corners, hyphen rules instead of borders. Admin keeps its daisyUI look and
  * doesn't import anything from here.
  */
+
+/**
+ * Held on the bare void, with no star and no chrome — every participant page
+ * starts here while it works out which planets belong to this device.
+ */
+export function TermLoading() {
+  return (
+    <div
+      className="font-terminal flex min-h-dvh items-center justify-center text-dim"
+      style={{ backgroundColor: VOID_COLOR }}
+    >
+      loading...
+    </div>
+  );
+}
 
 /** The `-----` rule that separates fields and control rows. */
 export function TermRule({ className = "" }: { className?: string }) {
@@ -54,6 +70,26 @@ export function TermLinkButton({
     <Link
       href={href}
       className={`inline-block bg-paper px-6 py-2 text-void transition-opacity hover:opacity-85 ${className}`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+/** `TermGhostButton`'s look on a real link, for the secondary way onward. */
+export function TermGhostLinkButton({
+  children,
+  href,
+  className = "",
+}: {
+  children: ReactNode;
+  href: ComponentProps<typeof Link>["href"];
+  className?: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`inline-block border border-paper px-6 py-2 text-paper transition-colors hover:bg-paper/10 ${className}`}
     >
       {children}
     </Link>

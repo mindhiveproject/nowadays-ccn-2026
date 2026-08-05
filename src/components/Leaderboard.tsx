@@ -13,7 +13,7 @@ import {
  * Terminal chrome like the rest of the participant flow: hyphen rules instead
  * of borders, a fixed rank rail on the left, the score alone on the right.
  *
- * Each pair reads as `planet / planet`, both names in their own star's ink.
+ * Each pair reads as `star / star`, both names in their own star's ink.
  */
 
 /** Rank column plus the row gap — sub-lines hang off the same left rail. */

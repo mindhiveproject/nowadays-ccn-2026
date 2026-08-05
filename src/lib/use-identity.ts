@@ -1,15 +1,18 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { getAnonymousId, getStoredPlanetId } from "@/lib/identity";
+import { IDENTITY_EVENT, getAnonymousId } from "@/lib/identity";
 
-/** localStorage only changes under us from another tab. */
+/** localStorage changes under us from another tab, or from this one on save. */
 function subscribe(onChange: () => void): () => void {
   window.addEventListener("storage", onChange);
-  return () => window.removeEventListener("storage", onChange);
+  window.addEventListener(IDENTITY_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(IDENTITY_EVENT, onChange);
+  };
 }
 
-const serverPlanetId = () => null;
 const serverAnonymousId = () => null;
 const clientHydrated = () => true;
 const serverHydrated = () => false;
@@ -17,21 +20,15 @@ const serverHydrated = () => false;
 /**
  * Who this device is, straight out of localStorage.
  *
- * Read through `useSyncExternalStore` rather than an effect so the values are
+ * Read through `useSyncExternalStore` rather than an effect so the value is
  * there on the first client render. `hydrated` is false until then — without
- * it a read-only page can't tell "no planet saved" apart from "not read yet"
+ * it a read-only page can't tell "nothing saved" apart from "not read yet"
  * and flashes the wrong empty state.
  */
 export function useStoredIdentity(): {
-  planetId: string | null;
   anonymousId: string | null;
   hydrated: boolean;
 } {
-  const planetId = useSyncExternalStore(
-    subscribe,
-    getStoredPlanetId,
-    serverPlanetId,
-  );
   const anonymousId = useSyncExternalStore(
     subscribe,
     getAnonymousId,
@@ -43,5 +40,5 @@ export function useStoredIdentity(): {
     serverHydrated,
   );
 
-  return { planetId, anonymousId, hydrated };
+  return { anonymousId, hydrated };
 }
