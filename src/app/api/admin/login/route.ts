@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { adminCookieOptions } from "@/lib/admin-auth";
+import { ADMIN_COOKIE_NAME } from "@/lib/constants";
 
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as { password?: string };
@@ -18,5 +20,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set(ADMIN_COOKIE_NAME, "1", adminCookieOptions());
+  return response;
 }
