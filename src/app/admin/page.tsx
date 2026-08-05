@@ -382,6 +382,14 @@ export default function AdminPage() {
         planet_a_id: viewingScore.planet_a_id,
         planet_b_id: viewingScore.planet_b_id,
         recorded_at: viewingScore.recorded_at,
+        strategy: viewingScore.strategy?.trim()
+          ? viewingScore.strategy.trim()
+          : null,
+        duration:
+          viewingScore.duration == null ||
+          !Number.isFinite(viewingScore.duration)
+            ? null
+            : viewingScore.duration,
       };
       const updated = await updateSessionScore(viewingScore.id, payload);
       setSessionScores((prev) =>
@@ -627,6 +635,8 @@ export default function AdminPage() {
                   <thead>
                     <tr>
                       <th>Score</th>
+                      <th>Strategy</th>
+                      <th>Duration</th>
                       <th>YQ session</th>
                       <th>Planet A</th>
                       <th>Planet B</th>
@@ -638,6 +648,12 @@ export default function AdminPage() {
                     {sessionScores.map((score) => (
                       <tr key={score.id} className="hover">
                         <td className="font-medium">{score.score}</td>
+                        <td className="max-w-[10rem] truncate text-sm">
+                          {score.strategy ?? "—"}
+                        </td>
+                        <td className="text-sm">
+                          {score.duration == null ? "—" : score.duration}
+                        </td>
                         <td>
                           <span className="font-mono text-xs">
                             {score.yq_session_id.length > 24
@@ -866,6 +882,39 @@ export default function AdminPage() {
                     })
                   }
                   required
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Strategy</span>
+                <input
+                  className="input input-bordered"
+                  value={viewingScore.strategy ?? ""}
+                  onChange={(e) =>
+                    setViewingScore({
+                      ...viewingScore,
+                      strategy:
+                        e.target.value.length === 0 ? null : e.target.value,
+                    })
+                  }
+                  placeholder="Optional"
+                />
+              </label>
+              <label className="form-control">
+                <span className="label-text">Duration (seconds)</span>
+                <input
+                  type="number"
+                  step="any"
+                  className="input input-bordered"
+                  value={viewingScore.duration ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setViewingScore({
+                      ...viewingScore,
+                      duration:
+                        raw === "" ? null : Number(e.target.value),
+                    });
+                  }}
+                  placeholder="Optional"
                 />
               </label>
               <label className="form-control">

@@ -11,6 +11,8 @@ type PatchBody = {
   planet_a_id?: unknown;
   planet_b_id?: unknown;
   recorded_at?: unknown;
+  strategy?: unknown;
+  duration?: unknown;
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -82,6 +84,33 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
     patch.recorded_at = body.recorded_at;
+  }
+
+  if (body.strategy !== undefined) {
+    if (body.strategy === null) {
+      patch.strategy = null;
+    } else if (typeof body.strategy === "string") {
+      const trimmed = body.strategy.trim();
+      patch.strategy = trimmed.length > 0 ? trimmed : null;
+    } else {
+      return NextResponse.json(
+        { error: "strategy must be a string or null" },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (body.duration !== undefined) {
+    if (body.duration === null) {
+      patch.duration = null;
+    } else if (isFiniteNumber(body.duration)) {
+      patch.duration = body.duration;
+    } else {
+      return NextResponse.json(
+        { error: "duration must be a finite number or null" },
+        { status: 400 },
+      );
+    }
   }
 
   if (Object.keys(patch).length === 0) {
