@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import StarCanvasClient from "@/components/StarCanvasClient";
-import StarSliders from "@/components/StarSliders";
-import { QUESTIONS } from "@/lib/constants";
+import StarControls from "@/components/StarControls";
+import {
+  TermButton,
+  TermField,
+  TermGhostButton,
+} from "@/components/terminal";
 import {
   clearStoredPlanetId,
   getOrCreateAnonymousId,
@@ -11,18 +15,24 @@ import {
   setStoredPlanetId,
 } from "@/lib/identity";
 import { getPlanet, upsertPlanetById } from "@/lib/planets";
-import { VOID_COLOR } from "@/lib/theme";
+import { PAPER_COLOR, VOID_COLOR } from "@/lib/theme";
 import type { Planet } from "@/lib/types/planet";
 import {
   DEFAULT_STAR_PARAMS,
   clampStar,
+  hueToCss,
+  starInkColor,
   type StarKey,
   type StarParams,
 } from "@/lib/types/star";
 
 type Step = "identity" | "questions" | "editor" | "done";
 
-const NAME_QUESTION = QUESTIONS[0];
+/**
+ * Star's vertical center. Sits above the middle so the controls at the bottom
+ * of the editor land on empty void rather than on the corona.
+ */
+const STAR_CENTER_Y = 0.4;
 
 function answerText(answers: Planet["answers"], key: string): string {
   const value = answers[key];
@@ -85,7 +95,7 @@ export default function PublicStarFlow() {
         if (cancelled) return;
         if (planet && planet.anonymous_id === anon) {
           applyPlanet(planet);
-          setToast("Welcome back — your star is still here.");
+          setToast("welcome back — your planet is still here");
           window.setTimeout(() => setToast(null), 3000);
         } else {
           // Stale or foreign id — don't leave a trap that overwrites later.
@@ -111,9 +121,13 @@ export default function PublicStarFlow() {
   const starName = useMemo(() => {
     const trimmed = answer1.trim();
     if (trimmed) return trimmed;
-    if (creatorName.trim()) return `${creatorName.trim()}'s star`;
-    return "Untitled star";
+    if (creatorName.trim()) return `${creatorName.trim()}'s planet`;
+    return "untitled";
   }, [answer1, creatorName]);
+
+  /** Label ink, and a lighter grade of it for the planet's own name. */
+  const ink = starInkColor(params.hue);
+  const inkBright = hueToCss(params.hue, 45, 90);
 
   function setParam(key: StarKey, value: number) {
     setParams((prev) => ({ ...prev, [key]: clampStar(key, value) }));
@@ -123,7 +137,7 @@ export default function PublicStarFlow() {
     e.preventDefault();
     setError(null);
     if (!creatorName.trim()) {
-      setError("Name is required.");
+      setError("first_name is required");
       return;
     }
     setStep("questions");
@@ -133,7 +147,7 @@ export default function PublicStarFlow() {
     e.preventDefault();
     setError(null);
     if (!answer1.trim()) {
-      setError("Please name your planet.");
+      setError("planet_name is required");
       return;
     }
     setStep("editor");
@@ -156,11 +170,11 @@ export default function PublicStarFlow() {
       });
       setPlanetId(saved.id);
       setStoredPlanetId(saved.id);
-      setToast("Star saved.");
+      setToast("planet saved");
       setStep("done");
       window.setTimeout(() => setToast(null), 2500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save star.");
+      setError(err instanceof Error ? err.message : "failed to save planet");
     } finally {
       setSaving(false);
     }
@@ -169,132 +183,126 @@ export default function PublicStarFlow() {
   if (restoring) {
     return (
       <div
-        className="flex min-h-dvh items-center justify-center"
+        className="font-terminal flex min-h-dvh items-center justify-center text-dim"
         style={{ backgroundColor: VOID_COLOR }}
       >
-        <span className="loading loading-spinner loading-lg text-primary" />
+        loading...
       </div>
     );
   }
 
+  const showStar = step === "editor" || step === "done";
+
   return (
     <div
-      className="relative min-h-dvh text-base-content"
-      style={{ backgroundColor: VOID_COLOR }}
+      className="font-terminal relative min-h-dvh"
+      style={{ backgroundColor: VOID_COLOR, color: PAPER_COLOR }}
     >
-      {/* Full-bleed star behind everything; it never unmounts between steps. */}
+      {/*
+       * Full-bleed noisy void. It never unmounts between steps — the intro
+       * screens just run it at zero intensity, so the grain is there and the
+       * star fades in when the editor opens.
+       */}
       <div className="pointer-events-none fixed inset-0 z-0">
-        <StarCanvasClient params={params} />
+        <StarCanvasClient
+          params={params}
+          intensity={showStar ? 1 : 0}
+          centerY={STAR_CENTER_Y}
+        />
       </div>
 
-      {toast && (
-        <div className="toast toast-top toast-center z-50">
-          <div className="alert alert-success text-sm">{toast}</div>
-        </div>
+      {/*
+       * Sinks the star back into the void behind the controls. Kept partly
+       * transparent so the grain still reads through it.
+       */}
+      {showStar && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[1] h-[52vh] bg-gradient-to-t from-void via-void/90 to-transparent" />
       )}
 
-      <div className="relative z-10 mx-auto flex min-h-dvh w-full max-w-md flex-col p-6">
+      <main className="relative z-10 mx-auto flex min-h-dvh w-full max-w-md flex-col px-6 pb-8 pt-6">
         {step === "identity" && (
-          <form
-            onSubmit={onIdentitySubmit}
-            className="m-auto flex w-full flex-col gap-6 rounded-box border border-white/10 bg-black/50 p-6 backdrop-blur-md"
-          >
-            <div>
-              <p className="text-sm uppercase tracking-widest opacity-60">
-                Star Sync
-              </p>
-              <h1 className="mt-1 text-3xl font-semibold">Who are you?</h1>
-              <p className="mt-2 text-sm opacity-70">
-                We&apos;ll attach your star to this profile.
-              </p>
-            </div>
+          <form onSubmit={onIdentitySubmit} className="flex flex-1 flex-col">
+            <p className="max-w-[34ch] pt-[16vh] text-sm leading-relaxed text-dim">
+              welcome! before creating your planet, we want to know about you
+            </p>
 
-            <label className="form-control w-full">
-              <span className="label-text mb-1">Name</span>
-              <input
-                className="input input-bordered w-full"
+            <div className="mt-16 flex flex-col gap-12">
+              <TermField
+                label="first_name:"
                 value={creatorName}
-                onChange={(e) => setCreatorName(e.target.value)}
+                onChange={setCreatorName}
+                inkColor={ink}
                 autoComplete="name"
                 required
               />
-            </label>
-
-            <label className="form-control w-full">
-              <span className="label-text mb-1">
-                Email{" "}
-                <span className="opacity-50 font-normal">(optional)</span>
-              </span>
-              <input
+              <TermField
+                label="email (optional):"
                 type="email"
-                className="input input-bordered w-full"
                 value={creatorEmail}
-                onChange={(e) => setCreatorEmail(e.target.value)}
+                onChange={setCreatorEmail}
+                inkColor={ink}
                 autoComplete="email"
-                placeholder="you@example.com"
               />
-            </label>
+            </div>
 
-            {error && <p className="text-sm text-error">{error}</p>}
+            {error && <p className="mt-6 text-sm text-red-300">{error}</p>}
 
-            <button type="submit" className="btn btn-primary">
-              Continue
-            </button>
+            <div className="mt-auto mb-[22vh] flex justify-end">
+              <TermButton type="submit">next</TermButton>
+            </div>
           </form>
         )}
 
         {step === "questions" && (
-          <form
-            onSubmit={onQuestionsSubmit}
-            className="m-auto flex w-full flex-col gap-5 rounded-box border border-white/10 bg-black/50 p-6 backdrop-blur-md"
-          >
-            <div>
-              <p className="text-sm uppercase tracking-widest opacity-60">
-                Name your planet
-              </p>
-              <h1 className="mt-1 text-2xl font-semibold">Shape your star</h1>
-            </div>
+          <form onSubmit={onQuestionsSubmit} className="flex flex-1 flex-col">
+            <p className="max-w-[34ch] pt-[16vh] text-sm leading-relaxed text-dim">
+              create your own planet to participate in the experience
+            </p>
 
-            <label className="form-control w-full">
-              <span className="label-text mb-1">{NAME_QUESTION.label}</span>
-              <input
-                className="input input-bordered w-full"
+            <div className="mt-16">
+              <TermField
+                label="planet_name:"
                 value={answer1}
-                onChange={(e) => setAnswer1(e.target.value)}
-                placeholder={NAME_QUESTION.placeholder}
+                onChange={setAnswer1}
+                inkColor={ink}
+                autoFocus
                 required
               />
-            </label>
+            </div>
 
-            {error && <p className="text-sm text-error">{error}</p>}
+            {error && <p className="mt-6 text-sm text-red-300">{error}</p>}
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="btn btn-ghost flex-1"
-                onClick={() => setStep("identity")}
-              >
-                Back
-              </button>
-              <button type="submit" className="btn btn-primary flex-1">
-                Continue
-              </button>
+            <div className="mt-auto mb-[22vh] flex items-center justify-between">
+              <TermGhostButton onClick={() => setStep("identity")}>
+                back
+              </TermGhostButton>
+              <TermButton type="submit">next</TermButton>
             </div>
           </form>
         )}
 
-        {(step === "editor" || step === "done") && (
-          <div className="mt-auto flex w-full flex-col gap-4 rounded-box border border-white/10 bg-black/50 p-5 backdrop-blur-md">
-            <div>
-              <h2 className="text-lg font-semibold">{starName}</h2>
-              <p className="text-xs opacity-60">
-                {step === "done"
-                  ? "Your star is saved. Tweak anytime, or start a new one."
-                  : "Tune your star, then validate your choice."}
-              </p>
-            </div>
+        {showStar && (
+          <div className="flex flex-1 flex-col">
+            <header className="flex items-baseline gap-3">
+              <span className="text-sm" style={{ color: ink }}>
+                planet_name :
+              </span>
+              <span
+                className="truncate text-lg"
+                style={{ color: inkBright }}
+                title={starName}
+              >
+                {starName}
+              </span>
+            </header>
 
-            <StarSliders
+            {/* Status line, held open so a toast doesn't shift the layout. */}
+            <p className="mt-2 h-5 text-sm text-dim">{toast}</p>
+
+            {/* Empty space the star lives behind. */}
+            <div className="min-h-[38vh] flex-1" />
+
+            <StarControls
               params={params}
               onChange={setParam}
               onOrbitModeChange={(mode) =>
@@ -302,66 +310,29 @@ export default function PublicStarFlow() {
               }
             />
 
-            {error && <p className="text-sm text-error">{error}</p>}
+            {error && <p className="mt-4 text-sm text-red-300">{error}</p>}
 
-            {step === "done" ? (
-              <div className="flex flex-col gap-2">
-                <div className="alert alert-success text-sm">
-                  Your star is saved. You can keep tweaking and save again.
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={saving}
-                  onClick={() => void onValidate()}
-                >
-                  {saving ? (
-                    <span className="loading loading-spinner loading-sm" />
-                  ) : (
-                    "Update star"
-                  )}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setStep("questions")}
-                >
-                  Edit name
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm opacity-70"
-                  onClick={resetForm}
-                >
-                  Start a new star
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="btn btn-ghost flex-1"
-                  onClick={() => setStep("questions")}
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary flex-1"
-                  disabled={saving}
-                  onClick={() => void onValidate()}
-                >
-                  {saving ? (
-                    <span className="loading loading-spinner loading-sm" />
-                  ) : (
-                    "Validate"
-                  )}
-                </button>
-              </div>
+            <div className="mt-8 flex items-center justify-between">
+              <TermGhostButton onClick={() => setStep("questions")}>
+                back
+              </TermGhostButton>
+              <TermButton disabled={saving} onClick={() => void onValidate()}>
+                {saving ? "saving..." : "save"}
+              </TermButton>
+            </div>
+
+            {step === "done" && (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="mt-6 self-center text-xs text-dim underline underline-offset-4 hover:text-paper/80"
+              >
+                start a new planet
+              </button>
             )}
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }

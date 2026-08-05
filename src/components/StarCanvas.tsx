@@ -14,6 +14,14 @@ type StarCanvasProps = {
   className?: string;
   /** Fixed square canvas in px. Omit to fill the host element. */
   size?: number;
+  /**
+   * How present the star is, 0–1. The grain and the void render either way, so
+   * 0 leaves the empty noisy space the intro screens sit on. Eased over ~0.6s
+   * inside the sketch, so flipping this reads as the star coming into being.
+   */
+  intensity?: number;
+  /** Star's vertical center as a fraction of the canvas. */
+  centerY?: number;
 };
 
 /** Design resolution — sizes are relative to min(w, h) / REF. */
@@ -21,6 +29,8 @@ const REF = 900;
 const TAU = Math.PI * 2;
 
 type Particle = {
+  /** Fixed slot on the ring — what `beads` phases both orbits by. */
+  theta: number;
   a0: number;
   a1: number;
   nx: number;
@@ -40,6 +50,7 @@ uniform vec2  uPos;
 uniform vec3  uCol, uColB, uBase;
 uniform float uRad;
 uniform float uTone, uThresh, uFuse, uBlend, uHalo, uGrad, uSoft;
+uniform float uAmt;
 
 void main() {
   vec2 st = vTexCoord;
@@ -52,7 +63,7 @@ void main() {
 
   float iso  = smoothstep(uThresh - uFuse, uThresh + uFuse, f);
   float halo = (1.0 - exp(-f * uBlend)) * uHalo;
-  float b    = pow(max(iso, halo), uSoft);
+  float b    = pow(max(iso, halo), uSoft) * uAmt;
 
   vec3 c = mix(uColB, uCol, clamp(sqrt(f) * uGrad, 0.0, 1.0));
 
@@ -119,12 +130,17 @@ export default function StarCanvas({
   params = DEFAULT_STAR_PARAMS,
   className = "",
   size,
+  intensity = 1,
+  centerY = SKETCH_DEFAULTS.star.y,
 }: StarCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const paramsRef = useRef<StarParams>(params);
   const sketchRef = useRef<p5 | null>(null);
   /** Bumped whenever params change, so the sketch knows to re-push uniforms. */
   const versionRef = useRef(0);
+  /** Eased toward inside draw() — see `intensity`. */
+  const targetAmtRef = useRef(intensity);
+  const centerYRef = useRef(centerY);
 
   // Hand new params to the running sketch without tearing it down. The version
   // bump is what tells draw() to re-push uniforms.
@@ -132,6 +148,15 @@ export default function StarCanvas({
     paramsRef.current = params;
     versionRef.current += 1;
   }, [params]);
+
+  useEffect(() => {
+    targetAmtRef.current = intensity;
+  }, [intensity]);
+
+  useEffect(() => {
+    centerYRef.current = centerY;
+    versionRef.current += 1;
+  }, [centerY]);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +178,8 @@ export default function StarCanvas({
         let sceneShader: p5.Shader;
         let postShader: p5.Shader;
         let appliedVersion = -1;
+        /** Current eased value of the `intensity` prop. */
+        let amt = targetAmtRef.current;
 
         function measure() {
           if (size) {
@@ -165,11 +192,14 @@ export default function StarCanvas({
         }
 
         function rescale() {
-          scl = Math.min(w, h) / REF;
+          scl = Math.min(w, h, S.star.maxUnit) / REF;
+          // uRad is derived from `unit`, so a resize has to re-push uniforms.
+          appliedVersion = -1;
         }
 
-        function makeParticle(): Particle {
+        function makeParticle(i: number): Particle {
           return {
+            theta: (i / S.particles.num) * TAU,
             a0: p.random(TAU),
             a1: p.random(TAU),
             nx: p.random(1000),
@@ -182,7 +212,9 @@ export default function StarCanvas({
         }
 
         function spawnParticles() {
-          particles = Array.from({ length: S.particles.num }, makeParticle);
+          particles = Array.from({ length: S.particles.num }, (_, i) =>
+            makeParticle(i),
+          );
         }
 
         /** HSB hue (0–255) → normalized RGB, at the glow's sat/bri. */
@@ -195,12 +227,14 @@ export default function StarCanvas({
         function pushUniforms() {
           const u = paramsRef.current;
 
-          sceneShader.setUniform("uPos", [S.star.x, S.star.y]);
+          sceneShader.setUniform("uPos", [S.star.x, centerYRef.current]);
           sceneShader.setUniform("uCol", hueToRGB(u.hue));
           sceneShader.setUniform("uColB", hueToRGB(u.hue2));
+          // The shader measures distance in fractions of min(w, h), so convert
+          // the capped px radius back into that space.
           sceneShader.setUniform(
             "uRad",
-            (u.size / REF) *
+            ((u.size * S.star.scale * scl) / Math.max(1, Math.min(w, h))) *
               (S.glow.radBase + (u.core / 100) * S.glow.radCore),
           );
           sceneShader.setUniform("uBase", hexToRGB(S.glow.base));
@@ -211,6 +245,7 @@ export default function StarCanvas({
           sceneShader.setUniform("uHalo", S.glow.halo);
           sceneShader.setUniform("uGrad", S.glow.grad);
           sceneShader.setUniform("uSoft", S.glow.soft);
+          sceneShader.setUniform("uAmt", amt);
 
           postShader.setUniform("uCA", S.post.ca);
           postShader.setUniform("uGrainAmt", S.post.grain);
@@ -222,18 +257,24 @@ export default function StarCanvas({
         function updateParticles(t: number) {
           const u = paramsRef.current;
           const P = S.particles;
-          const starSize = u.size * scl;
+          const starSize = u.size * S.star.scale * scl;
           // slow orbit shrinks as core rises; fast wobble runs at u.freq
           const ampSlow = starSize * 0.5 * (1 - u.core / 100);
           const ampFast = starSize;
-          const jitter = P.noiseGain * u.noise * scl;
+          const jitter = P.noiseGain * u.noise * S.star.scale * scl;
           const nt = t * P.noiseSpeed;
-          const coronaR = Math.max(P.coronaR * scl, 0.0001);
+          const coronaR = Math.max(P.coronaR * S.star.scale * scl, 0.0001);
           const twoWsq = 2 * P.coronaW ** 2;
+          // `beads` phases both orbits by the particle's ring slot instead of
+          // its random seeds, so the swarm resolves into an evenly spaced
+          // strand travelling around the star.
+          const beads = u.orbit_mode === "beads";
 
           for (const particle of particles) {
-            const s0 = t + particle.a0;
-            const s1 = u.freq * t + particle.a1;
+            const s0 = t + (beads ? particle.theta : particle.a0);
+            const s1 = beads
+              ? u.freq * (t + particle.theta)
+              : u.freq * t + particle.a1;
             const tx =
               starX +
               ampSlow * Math.cos(s0) +
@@ -256,12 +297,12 @@ export default function StarCanvas({
         function renderParticles() {
           const u = paramsRef.current;
           const P = S.particles;
-          const dot = P.size * scl;
+          const dot = P.size * S.star.scale * scl;
           const invSpread = 1 / P.hueSpread;
 
           for (const particle of particles) {
-            if (particle.glow < 0.004) continue; // below 1/255, nothing to draw
-            const g = 255 * particle.glow;
+            if (particle.glow * amt < 0.004) continue; // below 1/255, nothing to draw
+            const g = 255 * particle.glow * amt;
             p.fill(
               p.lerp(u.hue, u.hue2, Math.min(1, particle.r * invSpread)),
               P.sat,
@@ -301,11 +342,20 @@ export default function StarCanvas({
           p.background(0);
 
           if (appliedVersion !== versionRef.current) pushUniforms();
+
+          // Ease toward the requested intensity; only touch the uniform while
+          // it's actually moving, so a settled star stays a params-only push.
+          const target = targetAmtRef.current;
+          if (amt !== target) {
+            amt =
+              Math.abs(target - amt) < 0.002 ? target : amt + (target - amt) * 0.06;
+            sceneShader.setUniform("uAmt", amt);
+          }
           p.filter(sceneShader);
 
           p.translate(-p.width / 2, -p.height / 2, 0);
           starX = S.star.x * p.width;
-          starY = S.star.y * p.height;
+          starY = centerYRef.current * p.height;
           updateParticles(t);
           renderParticles();
 

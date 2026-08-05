@@ -22,6 +22,8 @@ export type StarKey = Exclude<keyof StarParams, "orbit_mode">;
 export type StarControl = {
   key: StarKey;
   label: string;
+  /** snake_case name shown in the participant-facing terminal UI. */
+  termLabel: string;
   min: number;
   max: number;
   step: number;
@@ -31,11 +33,27 @@ export type StarControl = {
 
 /** Participant-facing sliders — `size` is stored but not exposed here. */
 export const STAR_CONTROLS: readonly StarControl[] = [
-  { key: "freq", label: "Frequency", min: 1, max: 12, step: 0.1 },
-  { key: "noise", label: "Noise", min: 1, max: 100, step: 1 },
-  { key: "core", label: "Core", min: 0, max: 100, step: 1 },
-  { key: "hue", label: "Corona hue", min: 0, max: 255, step: 1, hue: true },
-  { key: "hue2", label: "Outer hue", min: 0, max: 255, step: 1, hue: true },
+  { key: "core", label: "Core", termLabel: "core_size", min: 0, max: 100, step: 1 },
+  { key: "freq", label: "Frequency", termLabel: "frequency", min: 1, max: 12, step: 0.1 },
+  { key: "noise", label: "Noise", termLabel: "scatter", min: 1, max: 100, step: 1 },
+  {
+    key: "hue",
+    label: "Corona hue",
+    termLabel: "inner_color",
+    min: 0,
+    max: 255,
+    step: 1,
+    hue: true,
+  },
+  {
+    key: "hue2",
+    label: "Outer hue",
+    termLabel: "outer_color",
+    min: 0,
+    max: 255,
+    step: 1,
+    hue: true,
+  },
 ] as const;
 
 export const STAR_KEYS = [
@@ -107,6 +125,21 @@ export const SKETCH_DEFAULTS = {
   star: {
     x: 0.5,
     y: 0.5,
+    /**
+     * Display-only multiplier on `params.size`. Size isn't tunable, so the
+     * star's on-screen presence lives here instead of in the stored value —
+     * which keeps already-saved planets rendering at the same scale as new
+     * ones. Scales the glow radius, the orbit amplitudes and the corona ring
+     * together, so the composition holds.
+     */
+    scale: 2.8,
+    /**
+     * Caps the viewport dimension the star is sized against, in px. The
+     * participant UI is a phone-width column, so past this the star would
+     * outgrow the layout it's composed with — on a wide desktop it would
+     * spill straight over the controls. Below the cap nothing changes.
+     */
+    maxUnit: 560,
   },
   glow: {
     tone: 1.5,
@@ -150,4 +183,12 @@ export const SKETCH_DEFAULTS = {
 export function hueToCss(hue: number, saturation = 85, lightness = 55): string {
   const h = (((hue / 255) * 360) % 360).toFixed(1);
   return `hsl(${h} ${saturation}% ${lightness}%)`;
+}
+
+/**
+ * The star's own color, lightened enough to read as text on the void. Labels
+ * and the planet name are tinted with this so the chrome belongs to the star.
+ */
+export function starInkColor(hue: number): string {
+  return hueToCss(hue, 58, 78);
 }
