@@ -18,7 +18,9 @@ import {
   setPlanetStaged,
   updatePlanet,
 } from "@/lib/planets";
+import { getLatestSessionScore } from "@/lib/session-scores";
 import type { Planet, PlanetUpdate } from "@/lib/types/planet";
+import type { SessionScore } from "@/lib/types/session-score";
 import { clampStar, type StarKey } from "@/lib/types/star";
 
 function formatDate(value: string) {
@@ -32,11 +34,25 @@ function formatDate(value: string) {
   }
 }
 
+function formatJsonValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [planets, setPlanets] = useState<Planet[]>([]);
+  const [latestScore, setLatestScore] = useState<SessionScore | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stageError, setStageError] = useState<string | null>(null);
@@ -53,8 +69,33 @@ export default function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const rows = await listPlanets();
-      setPlanets(rows);
+      const [planetsResult, scoreResult] = await Promise.allSettled([
+        listPlanets(),
+        getLatestSessionScore(),
+      ]);
+
+      if (planetsResult.status === "fulfilled") {
+        setPlanets(planetsResult.value);
+      } else {
+        setError(
+          planetsResult.reason instanceof Error
+            ? planetsResult.reason.message
+            : "Failed to load planets.",
+        );
+      }
+
+      if (scoreResult.status === "fulfilled") {
+        setLatestScore(scoreResult.value);
+      } else {
+        setLatestScore(null);
+        if (planetsResult.status === "fulfilled") {
+          setError(
+            scoreResult.reason instanceof Error
+              ? `Session scores unavailable: ${scoreResult.reason.message}`
+              : "Session scores unavailable.",
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load planets.");
     } finally {
@@ -73,7 +114,7 @@ export default function AdminPage() {
     try {
       supabase = createClient();
       channel = supabase
-        .channel("admin-planets")
+        .channel("admin-live")
         .on(
           "postgres_changes",
           { event: "*", schema: "public", table: "planets" },
@@ -95,6 +136,28 @@ export default function AdminPage() {
             }
           },
         )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "session_scores" },
+          (payload) => {
+            if (
+              payload.eventType === "INSERT" ||
+              payload.eventType === "UPDATE"
+            ) {
+              const row = payload.new as SessionScore;
+              setLatestScore((prev) => {
+                if (!prev) return row;
+                if (prev.id === row.id) return row;
+                return new Date(row.recorded_at) >= new Date(prev.recorded_at)
+                  ? row
+                  : prev;
+              });
+            } else if (payload.eventType === "DELETE") {
+              const row = payload.old as SessionScore;
+              setLatestScore((prev) => (prev?.id === row.id ? null : prev));
+            }
+          },
+        )
         .subscribe();
     } catch (err) {
       setError(
@@ -113,6 +176,16 @@ export default function AdminPage() {
     () => planets.filter((p) => p.is_staged),
     [planets],
   );
+
+  const scorePlanetNames = useMemo(() => {
+    if (!latestScore) return null;
+    const a = planets.find((p) => p.id === latestScore.planet_a_id);
+    const b = planets.find((p) => p.id === latestScore.planet_b_id);
+    return {
+      a: a?.name ?? latestScore.planet_a_id.slice(0, 8),
+      b: b?.name ?? latestScore.planet_b_id.slice(0, 8),
+    };
+  }, [latestScore, planets]);
 
   async function onLogin(e: FormEvent) {
     e.preventDefault();
@@ -163,10 +236,16 @@ export default function AdminPage() {
         name: editing.name,
         creator_name: editing.creator_name,
         creator_email: editing.creator_email,
-        answer1: editing.answer1,
-        answer2: editing.answer2,
-        answer3: editing.answer3,
-        star_params: editing.star_params,
+        answers: {
+          answer1:
+            editing.answers.answer1 === null ||
+            editing.answers.answer1 === undefined
+              ? ""
+              : typeof editing.answers.answer1 === "string"
+                ? editing.answers.answer1
+                : JSON.stringify(editing.answers.answer1),
+        },
+        params: editing.params,
         is_staged: editing.is_staged,
       };
 
@@ -241,6 +320,14 @@ export default function AdminPage() {
             >
               Staged ({staged.length}/{MAX_STAGED})
             </div>
+            {latestScore && (
+              <div className="badge badge-lg badge-primary">
+                Score {latestScore.score}
+                {scorePlanetNames
+                  ? ` · ${scorePlanetNames.a} × ${scorePlanetNames.b}`
+                  : null}
+              </div>
+            )}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
@@ -257,6 +344,12 @@ export default function AdminPage() {
                 {p.name}
               </span>
             ))}
+          </div>
+        )}
+        {latestScore && (
+          <div className="mx-auto max-w-7xl px-4 pb-3 text-xs opacity-60">
+            Latest YQ session {latestScore.yq_session_id} · recorded{" "}
+            {formatDate(latestScore.recorded_at)}
           </div>
         )}
       </header>
@@ -293,7 +386,7 @@ export default function AdminPage() {
                 {planets.map((planet) => (
                   <tr key={planet.id} className="hover">
                     <td>
-                      <StarSwatch params={planet.star_params} size={72} />
+                      <StarSwatch params={planet.params} size={72} />
                     </td>
                     <td>
                       <div className="font-medium">{planet.name}</div>
@@ -384,52 +477,48 @@ export default function AdminPage() {
                 />
               </label>
               <label className="form-control">
-                <span className="label-text">Answer 1</span>
+                <span className="label-text">Planet name answer</span>
                 <input
                   className="input input-bordered"
-                  value={editing.answer1 ?? ""}
-                  onChange={(e) =>
-                    setEditing({ ...editing, answer1: e.target.value })
+                  value={
+                    editing.answers.answer1 === null ||
+                    editing.answers.answer1 === undefined
+                      ? ""
+                      : typeof editing.answers.answer1 === "string"
+                        ? editing.answers.answer1
+                        : JSON.stringify(editing.answers.answer1)
                   }
-                />
-              </label>
-              <label className="form-control">
-                <span className="label-text">Answer 2</span>
-                <input
-                  className="input input-bordered"
-                  value={editing.answer2 ?? ""}
                   onChange={(e) =>
-                    setEditing({ ...editing, answer2: e.target.value })
-                  }
-                />
-              </label>
-              <label className="form-control">
-                <span className="label-text">Answer 3</span>
-                <input
-                  className="input input-bordered"
-                  value={editing.answer3 ?? ""}
-                  onChange={(e) =>
-                    setEditing({ ...editing, answer3: e.target.value })
+                    setEditing({
+                      ...editing,
+                      answers: { answer1: e.target.value },
+                    })
                   }
                 />
               </label>
 
               <div className="flex items-start gap-4">
                 <StarSwatch
-                  params={editing.star_params}
+                  params={editing.params}
                   size={96}
                   className="shrink-0"
                 />
                 <StarSliders
                   className="min-w-0 flex-1"
-                  params={editing.star_params}
+                  params={editing.params}
                   onChange={(key: StarKey, value) =>
                     setEditing({
                       ...editing,
-                      star_params: {
-                        ...editing.star_params,
+                      params: {
+                        ...editing.params,
                         [key]: clampStar(key, value),
                       },
+                    })
+                  }
+                  onOrbitModeChange={(mode) =>
+                    setEditing({
+                      ...editing,
+                      params: { ...editing.params, orbit_mode: mode },
                     })
                   }
                 />

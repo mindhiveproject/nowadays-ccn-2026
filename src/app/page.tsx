@@ -5,12 +5,14 @@ import StarCanvasClient from "@/components/StarCanvasClient";
 import StarSliders from "@/components/StarSliders";
 import { QUESTIONS } from "@/lib/constants";
 import {
+  clearStoredPlanetId,
   getOrCreateAnonymousId,
   getStoredPlanetId,
   setStoredPlanetId,
 } from "@/lib/identity";
-import { upsertPlanetById } from "@/lib/planets";
+import { getPlanet, upsertPlanetById } from "@/lib/planets";
 import { VOID_COLOR } from "@/lib/theme";
+import type { Planet } from "@/lib/types/planet";
 import {
   DEFAULT_STAR_PARAMS,
   clampStar,
@@ -20,25 +22,90 @@ import {
 
 type Step = "identity" | "questions" | "editor" | "done";
 
+const NAME_QUESTION = QUESTIONS[0];
+
+function answerText(answers: Planet["answers"], key: string): string {
+  const value = answers[key];
+  return typeof value === "string" ? value : "";
+}
+
 export default function PublicStarFlow() {
   const [step, setStep] = useState<Step>("identity");
+  const [restoring, setRestoring] = useState(true);
   const [anonymousId, setAnonymousId] = useState("");
   const [planetId, setPlanetId] = useState<string | null>(null);
 
   const [creatorName, setCreatorName] = useState("");
   const [creatorEmail, setCreatorEmail] = useState("");
   const [answer1, setAnswer1] = useState("");
-  const [answer2, setAnswer2] = useState("");
-  const [answer3, setAnswer3] = useState("");
   const [params, setParams] = useState<StarParams>(DEFAULT_STAR_PARAMS);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
+  function applyPlanet(planet: Planet) {
+    setPlanetId(planet.id);
+    setCreatorName(planet.creator_name);
+    setCreatorEmail(planet.creator_email);
+    setAnswer1(answerText(planet.answers, "answer1") || planet.name);
+    setParams(planet.params);
+    setStep("done");
+  }
+
+  function resetForm() {
+    const confirmed = window.confirm(
+      "Start a brand-new star? Your current one stays saved — this just begins a fresh one on this device.",
+    );
+    if (!confirmed) return;
+    clearStoredPlanetId();
+    setPlanetId(null);
+    setCreatorName("");
+    setCreatorEmail("");
+    setAnswer1("");
+    setParams({ ...DEFAULT_STAR_PARAMS });
+    setError(null);
+    setToast(null);
+    setStep("identity");
+  }
+
   useEffect(() => {
-    setAnonymousId(getOrCreateAnonymousId());
-    setPlanetId(getStoredPlanetId());
+    let cancelled = false;
+    const anon = getOrCreateAnonymousId();
+    const storedId = getStoredPlanetId();
+    setAnonymousId(anon);
+
+    if (!storedId) {
+      setRestoring(false);
+      return;
+    }
+
+    void getPlanet(storedId)
+      .then((planet) => {
+        if (cancelled) return;
+        if (planet && planet.anonymous_id === anon) {
+          applyPlanet(planet);
+          setToast("Welcome back — your star is still here.");
+          window.setTimeout(() => setToast(null), 3000);
+        } else {
+          // Stale or foreign id — don't leave a trap that overwrites later.
+          clearStoredPlanetId();
+          setPlanetId(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          clearStoredPlanetId();
+          setPlanetId(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const starName = useMemo(() => {
@@ -55,8 +122,8 @@ export default function PublicStarFlow() {
   function onIdentitySubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!creatorName.trim() || !creatorEmail.trim()) {
-      setError("Name and email are required.");
+    if (!creatorName.trim()) {
+      setError("Name is required.");
       return;
     }
     setStep("questions");
@@ -65,8 +132,8 @@ export default function PublicStarFlow() {
   function onQuestionsSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!answer1.trim() || !answer2.trim() || !answer3.trim()) {
-      setError("Please answer all three questions.");
+    if (!answer1.trim()) {
+      setError("Please name your planet.");
       return;
     }
     setStep("editor");
@@ -81,10 +148,10 @@ export default function PublicStarFlow() {
         creator_name: creatorName.trim(),
         creator_email: creatorEmail.trim(),
         anonymous_id: anonymousId || getOrCreateAnonymousId(),
-        answer1: answer1.trim(),
-        answer2: answer2.trim(),
-        answer3: answer3.trim(),
-        star_params: params,
+        answers: {
+          answer1: answer1.trim(),
+        },
+        params,
         is_staged: false,
       });
       setPlanetId(saved.id);
@@ -97,6 +164,17 @@ export default function PublicStarFlow() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (restoring) {
+    return (
+      <div
+        className="flex min-h-dvh items-center justify-center"
+        style={{ backgroundColor: VOID_COLOR }}
+      >
+        <span className="loading loading-spinner loading-lg text-primary" />
+      </div>
+    );
   }
 
   return (
@@ -143,14 +221,17 @@ export default function PublicStarFlow() {
             </label>
 
             <label className="form-control w-full">
-              <span className="label-text mb-1">Email</span>
+              <span className="label-text mb-1">
+                Email{" "}
+                <span className="opacity-50 font-normal">(optional)</span>
+              </span>
               <input
                 type="email"
                 className="input input-bordered w-full"
                 value={creatorEmail}
                 onChange={(e) => setCreatorEmail(e.target.value)}
                 autoComplete="email"
-                required
+                placeholder="you@example.com"
               />
             </label>
 
@@ -169,51 +250,21 @@ export default function PublicStarFlow() {
           >
             <div>
               <p className="text-sm uppercase tracking-widest opacity-60">
-                A few short questions
+                Name your planet
               </p>
               <h1 className="mt-1 text-2xl font-semibold">Shape your star</h1>
             </div>
 
-            {QUESTIONS.map((q) => {
-              if (q.type === "select") {
-                return (
-                  <label key={q.id} className="form-control w-full">
-                    <span className="label-text mb-1">{q.label}</span>
-                    <select
-                      className="select select-bordered w-full"
-                      value={answer2}
-                      onChange={(e) => setAnswer2(e.target.value)}
-                      required
-                    >
-                      <option value="" disabled>
-                        Choose one
-                      </option>
-                      {q.options.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                );
-              }
-
-              const value = q.id === "answer1" ? answer1 : answer3;
-              const setValue = q.id === "answer1" ? setAnswer1 : setAnswer3;
-
-              return (
-                <label key={q.id} className="form-control w-full">
-                  <span className="label-text mb-1">{q.label}</span>
-                  <input
-                    className="input input-bordered w-full"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder={q.placeholder}
-                    required
-                  />
-                </label>
-              );
-            })}
+            <label className="form-control w-full">
+              <span className="label-text mb-1">{NAME_QUESTION.label}</span>
+              <input
+                className="input input-bordered w-full"
+                value={answer1}
+                onChange={(e) => setAnswer1(e.target.value)}
+                placeholder={NAME_QUESTION.placeholder}
+                required
+              />
+            </label>
 
             {error && <p className="text-sm text-error">{error}</p>}
 
@@ -237,11 +288,19 @@ export default function PublicStarFlow() {
             <div>
               <h2 className="text-lg font-semibold">{starName}</h2>
               <p className="text-xs opacity-60">
-                Tune your star, then validate your choice.
+                {step === "done"
+                  ? "Your star is saved. Tweak anytime, or start a new one."
+                  : "Tune your star, then validate your choice."}
               </p>
             </div>
 
-            <StarSliders params={params} onChange={setParam} />
+            <StarSliders
+              params={params}
+              onChange={setParam}
+              onOrbitModeChange={(mode) =>
+                setParams((prev) => ({ ...prev, orbit_mode: mode }))
+              }
+            />
 
             {error && <p className="text-sm text-error">{error}</p>}
 
@@ -267,7 +326,14 @@ export default function PublicStarFlow() {
                   className="btn btn-ghost btn-sm"
                   onClick={() => setStep("questions")}
                 >
-                  Edit answers
+                  Edit name
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm opacity-70"
+                  onClick={resetForm}
+                >
+                  Start a new star
                 </button>
               </div>
             ) : (

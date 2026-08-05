@@ -9,25 +9,6 @@ export const QUESTIONS = [
     type: "text" as const,
     placeholder: "e.g. Ember Ring",
   },
-  {
-    id: "answer2",
-    label: "What mood should it carry?",
-    type: "select" as const,
-    options: [
-      "Calm",
-      "Curious",
-      "Electric",
-      "Melancholy",
-      "Wild",
-      "Dreamy",
-    ],
-  },
-  {
-    id: "answer3",
-    label: "One word for how it moves through space?",
-    type: "text" as const,
-    placeholder: "e.g. drift, pulse, scatter",
-  },
 ] as const;
 
 export const MAX_STAGED = 2;
