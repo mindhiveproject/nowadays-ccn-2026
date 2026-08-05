@@ -16,6 +16,8 @@ export type SessionScoreInsert = {
   planet_a_id: string;
   planet_b_id: string;
   score: number;
+  strategy?: string | null;
+  duration?: number | null;
   recorded_at?: string;
 };
 
