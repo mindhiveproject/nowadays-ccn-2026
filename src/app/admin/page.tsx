@@ -218,7 +218,10 @@ export default function AdminPage() {
       return;
     }
     try {
-      await setPlanetStaged(planet.id, next);
+      const updated = await setPlanetStaged(planet.id, next);
+      setPlanets((prev) =>
+        prev.map((p) => (p.id === updated.id ? updated : p)),
+      );
     } catch (err) {
       setStageError(
         err instanceof Error ? err.message : "Failed to update staging.",
