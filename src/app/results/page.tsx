@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo } from "react";
 import Leaderboard from "@/components/Leaderboard";
 import StarCanvasClient from "@/components/StarCanvasClient";
+import { TermLinkButton } from "@/components/terminal";
+import { buildConclusionHref } from "@/lib/conclusion-params";
 import { buildOwnLeaderboard } from "@/lib/leaderboard";
 import { PAPER_COLOR, VOID_COLOR } from "@/lib/theme";
 import { useMyPlanets } from "@/lib/use-my-planets";
@@ -25,10 +27,29 @@ export default function ResultsPage() {
     [myPlanets],
   );
 
+  const myScores = useMemo(
+    () =>
+      scores.filter(
+        (s) => planetIds.has(s.planet_a_id) || planetIds.has(s.planet_b_id),
+      ),
+    [scores, planetIds],
+  );
+
   const rows = useMemo(
     () => buildOwnLeaderboard(scores, planetById, planetIds),
     [scores, planetById, planetIds],
   );
+
+  const conclusionHref = useMemo(
+    () =>
+      buildConclusionHref(
+        myScores.map((s) => s.id),
+        myPlanets.map((p) => p.id),
+      ),
+    [myScores, myPlanets],
+  );
+
+  const hasPostedResults = myScores.length > 0;
 
   return (
     <div
@@ -89,6 +110,25 @@ export default function ResultsPage() {
             <p className="mt-2 max-w-[34ch] text-sm leading-relaxed text-dim">
               every pair you have synced with, best run first
             </p>
+
+            {hasPostedResults && (
+              <div className="mt-8 flex flex-col gap-4 border border-paper/25 px-4 py-4">
+                <p className="max-w-[34ch] text-sm leading-relaxed">
+                  {myScores.length === 1
+                    ? "your result has been posted"
+                    : `${myScores.length} results have been posted`}
+                </p>
+                <p className="max-w-[34ch] text-xs leading-relaxed text-dim">
+                  see how your runs sit in the full score distribution
+                </p>
+                <TermLinkButton
+                  href={conclusionHref}
+                  className="w-full text-center"
+                >
+                  see the conclusion
+                </TermLinkButton>
+              </div>
+            )}
 
             <div className="mt-10">
               <Leaderboard rows={rows} emptyMessage={EMPTY_MESSAGE} />
