@@ -87,7 +87,7 @@ Base URL: `https://constellation.youquantified.com`
 
 ```bash
 # .env.local
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 # Prefer sb_secret_... from Dashboard → Settings → API Keys
 SUPABASE_SECRET_KEY=your-secret-key

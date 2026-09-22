@@ -1,6 +1,6 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseUrl = process.env.SUPABASE_URL;
 
 /**
  * Prefer the new secret key (`sb_secret_...`). Fall back to the legacy
@@ -25,7 +25,7 @@ export function createAdminClient() {
 
   if (!supabaseUrl || !secretKey) {
     throw new Error(
-      "SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) and NEXT_PUBLIC_SUPABASE_URL are required",
+      "SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) and SUPABASE_URL are required",
     );
   }
 
